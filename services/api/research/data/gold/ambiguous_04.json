@@ -1,0 +1,56 @@
+{
+  "id": "ambiguous_04",
+  "category": "ambiguous",
+  "conversation_date": "2026-10-05",
+  "user_timezone": "Europe/Moscow",
+  "participants": {
+    "operator": "типография",
+    "client": "клиент"
+  },
+  "dialogue": [
+    {
+      "speaker": "client",
+      "text": "Здравствуйте, когда будет готов мой заказ на печать визиток?",
+      "start": 0.0,
+      "end": 5.4
+    },
+    {
+      "speaker": "operator",
+      "text": "Здравствуйте! Постараемся сделать быстро, как только напечатаем — сразу сообщим.",
+      "start": 5.8,
+      "end": 12.87
+    },
+    {
+      "speaker": "client",
+      "text": "Мне бы хотя бы примерно знать срок.",
+      "start": 13.27,
+      "end": 16.58
+    },
+    {
+      "speaker": "operator",
+      "text": "Точный срок пока назвать не могу, наберём вас.",
+      "start": 16.98,
+      "end": 21.22
+    }
+  ],
+  "expected_commitments": [
+    {
+      "type": "promise",
+      "title": "Готовность заказа визиток",
+      "owner": "counterparty",
+      "due_date": null,
+      "due_time": null,
+      "amount": null,
+      "currency": null,
+      "context_quote": "Здравствуйте! Постараемся сделать быстро, как только напечатаем — сразу сообщим.",
+      "audio_start": 5.8,
+      "audio_end": 12.87,
+      "confidence": 1.0,
+      "status": "needs_clarification",
+      "uncertainty": [
+        "нет конкретной даты или срока — только «быстро»"
+      ]
+    }
+  ],
+  "notes": "Тест-кейс из скилла: «постараемся сделать быстро» → needs_clarification."
+}

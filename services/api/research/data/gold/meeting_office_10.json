@@ -1,0 +1,54 @@
+{
+  "id": "meeting_office_10",
+  "category": "meeting_with_time",
+  "conversation_date": "2026-10-05",
+  "user_timezone": "Europe/Moscow",
+  "participants": {
+    "operator": "офис продаж",
+    "client": "клиент"
+  },
+  "dialogue": [
+    {
+      "speaker": "operator",
+      "text": "Здравствуйте! Это офис продаж. Предлагаю встретиться у нас в офисе, обсудим условия.",
+      "start": 0.0,
+      "end": 7.4
+    },
+    {
+      "speaker": "client",
+      "text": "Когда вам удобно?",
+      "start": 7.8,
+      "end": 9.62
+    },
+    {
+      "speaker": "operator",
+      "text": "Давайте в пятницу в десять утра.",
+      "start": 10.02,
+      "end": 13.08
+    },
+    {
+      "speaker": "client",
+      "text": "В пятницу в десять утра подходит, приеду.",
+      "start": 13.48,
+      "end": 17.3
+    }
+  ],
+  "expected_commitments": [
+    {
+      "type": "meeting",
+      "title": "Встреча в офисе для обсуждения условий",
+      "owner": "user",
+      "due_date": "2026-10-09",
+      "due_time": "10:00:00",
+      "amount": null,
+      "currency": null,
+      "context_quote": "Давайте в пятницу в десять утра.",
+      "audio_start": 10.02,
+      "audio_end": 13.08,
+      "confidence": 1.0,
+      "status": "proposed",
+      "uncertainty": []
+    }
+  ],
+  "notes": "Встреча «в пятницу в 10 утра» (09.10 10:00)."
+}

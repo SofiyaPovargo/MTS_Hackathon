@@ -1,0 +1,48 @@
+{
+  "id": "deadline_month_end_09",
+  "category": "deadline",
+  "conversation_date": "2026-10-05",
+  "user_timezone": "Europe/Moscow",
+  "participants": {
+    "operator": "подрядчик",
+    "client": "заказчик"
+  },
+  "dialogue": [
+    {
+      "speaker": "client",
+      "text": "Когда сдадите отчётные документы?",
+      "start": 0.0,
+      "end": 3.15
+    },
+    {
+      "speaker": "operator",
+      "text": "Документы будут готовы, мы сдадим их до конца месяца.",
+      "start": 3.55,
+      "end": 8.37
+    },
+    {
+      "speaker": "client",
+      "text": "Понял, ждём.",
+      "start": 8.77,
+      "end": 10.17
+    }
+  ],
+  "expected_commitments": [
+    {
+      "type": "deadline",
+      "title": "Сдача отчётных документов",
+      "owner": "counterparty",
+      "due_date": "2026-10-31",
+      "due_time": null,
+      "amount": null,
+      "currency": null,
+      "context_quote": "Документы будут готовы, мы сдадим их до конца месяца.",
+      "audio_start": 3.55,
+      "audio_end": 8.37,
+      "confidence": 1.0,
+      "status": "proposed",
+      "uncertainty": []
+    }
+  ],
+  "notes": "«До конца месяца» резолвится в 31.10."
+}

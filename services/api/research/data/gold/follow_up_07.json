@@ -1,0 +1,54 @@
+{
+  "id": "follow_up_07",
+  "category": "follow_up",
+  "conversation_date": "2026-10-05",
+  "user_timezone": "Europe/Moscow",
+  "participants": {
+    "operator": "бухгалтерия",
+    "client": "Наталья Петровна"
+  },
+  "dialogue": [
+    {
+      "speaker": "operator",
+      "text": "Здравствуйте, Наталья Петровна, это бухгалтерия компании «Ромашка».",
+      "start": 0.0,
+      "end": 5.98
+    },
+    {
+      "speaker": "client",
+      "text": "Здравствуйте, я вас слушаю.",
+      "start": 6.38,
+      "end": 9.03
+    },
+    {
+      "speaker": "operator",
+      "text": "По вашему вопросу о документах я перезвоню вам в четверг после обеда.",
+      "start": 9.43,
+      "end": 15.58
+    },
+    {
+      "speaker": "client",
+      "text": "Хорошо, буду ждать звонка.",
+      "start": 15.98,
+      "end": 18.55
+    }
+  ],
+  "expected_commitments": [
+    {
+      "type": "follow_up",
+      "title": "Перезвон по вопросу документов",
+      "owner": "counterparty",
+      "due_date": "2026-10-08",
+      "due_time": null,
+      "amount": null,
+      "currency": null,
+      "context_quote": "По вашему вопросу о документах я перезвоню вам в четверг после обеда.",
+      "audio_start": 9.43,
+      "audio_end": 15.58,
+      "confidence": 1.0,
+      "status": "proposed",
+      "uncertainty": []
+    }
+  ],
+  "notes": "Follow-up с датой «в четверг» (08.10), время расплывчатое — оставляем без времени."
+}

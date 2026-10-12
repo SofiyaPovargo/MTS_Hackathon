@@ -1,0 +1,44 @@
+{
+  "id": "no_commitment_06",
+  "category": "no_commitment",
+  "conversation_date": "2026-10-05",
+  "user_timezone": "Europe/Moscow",
+  "participants": {
+    "operator": "автосервис",
+    "client": "клиент"
+  },
+  "dialogue": [
+    {
+      "speaker": "operator",
+      "text": "Автосервис «Форсаж», здравствуйте.",
+      "start": 0.0,
+      "end": 3.23
+    },
+    {
+      "speaker": "client",
+      "text": "Здравствуйте, я хотел узнать, готова ли машина.",
+      "start": 3.63,
+      "end": 7.95
+    },
+    {
+      "speaker": "operator",
+      "text": "Да, работа завершена, можете забирать.",
+      "start": 8.35,
+      "end": 11.92
+    },
+    {
+      "speaker": "client",
+      "text": "Отлично, спасибо за информацию!",
+      "start": 12.32,
+      "end": 15.3
+    },
+    {
+      "speaker": "operator",
+      "text": "Всего доброго!",
+      "start": 15.7,
+      "end": 17.27
+    }
+  ],
+  "expected_commitments": [],
+  "notes": "Тест-кейс из скилла: договорённостей нет."
+}

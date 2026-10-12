@@ -1,0 +1,56 @@
+{
+  "id": "delivery_payment_14",
+  "category": "payment_amount",
+  "conversation_date": "2026-10-05",
+  "user_timezone": "Europe/Moscow",
+  "participants": {
+    "operator": "курьерская служба",
+    "client": "клиент"
+  },
+  "dialogue": [
+    {
+      "speaker": "operator",
+      "text": "Здравствуйте! Курьерская служба, по поводу доставки вашего заказа.",
+      "start": 0.0,
+      "end": 5.9
+    },
+    {
+      "speaker": "client",
+      "text": "Здравствуйте, сколько будет стоить доставка?",
+      "start": 6.3,
+      "end": 10.37
+    },
+    {
+      "speaker": "operator",
+      "text": "Доставка — пятьсот рублей, оплатите при получении.",
+      "start": 10.77,
+      "end": 15.33
+    },
+    {
+      "speaker": "client",
+      "text": "Отлично, договорились.",
+      "start": 15.73,
+      "end": 17.97
+    }
+  ],
+  "expected_commitments": [
+    {
+      "type": "payment",
+      "title": "Оплата доставки заказа 500 рублей",
+      "owner": "user",
+      "due_date": null,
+      "due_time": null,
+      "amount": "500",
+      "currency": "RUB",
+      "context_quote": "Доставка — пятьсот рублей, оплатите при получении.",
+      "audio_start": 10.77,
+      "audio_end": 15.33,
+      "confidence": 1.0,
+      "status": "needs_clarification",
+      "uncertainty": [
+        "не указан срок оплаты — только «при получении»"
+      ]
+    }
+  ],
+  "notes": "Сумма известна, даты нет → needs_clarification по сроку."
+}

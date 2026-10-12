@@ -1,0 +1,98 @@
+{
+  "id": "multiple_11",
+  "category": "multiple_commitments",
+  "conversation_date": "2026-10-05",
+  "user_timezone": "Europe/Moscow",
+  "participants": {
+    "operator": "Ольга (ТехноПоставка)",
+    "client": "закупщик"
+  },
+  "dialogue": [
+    {
+      "speaker": "operator",
+      "text": "Алло, добрый день! Менеджер Ольга, компания «ТехноПоставка», по вашему заказу на серверы.",
+      "start": 0.0,
+      "end": 7.82
+    },
+    {
+      "speaker": "client",
+      "text": "Здравствуйте, да.",
+      "start": 8.22,
+      "end": 10.03
+    },
+    {
+      "speaker": "operator",
+      "text": "Договор пришлю завтра до конца дня.",
+      "start": 10.43,
+      "end": 13.75
+    },
+    {
+      "speaker": "client",
+      "text": "Хорошо. И ещё перезвоните мне после обеда.",
+      "start": 14.15,
+      "end": 18.05
+    },
+    {
+      "speaker": "operator",
+      "text": "Обязательно перезвоню. А аванс — пятьдесят тысяч, нужно внести до встречи.",
+      "start": 18.45,
+      "end": 25.02
+    },
+    {
+      "speaker": "client",
+      "text": "Записал, аванс внесём.",
+      "start": 25.42,
+      "end": 27.65
+    }
+  ],
+  "expected_commitments": [
+    {
+      "type": "promise",
+      "title": "Договор на поставку серверов",
+      "owner": "counterparty",
+      "due_date": "2026-10-06",
+      "due_time": null,
+      "amount": null,
+      "currency": null,
+      "context_quote": "Договор пришлю завтра до конца дня.",
+      "audio_start": 10.43,
+      "audio_end": 13.75,
+      "confidence": 1.0,
+      "status": "proposed",
+      "uncertainty": []
+    },
+    {
+      "type": "follow_up",
+      "title": "Перезвон после обеда",
+      "owner": "counterparty",
+      "due_date": "2026-10-06",
+      "due_time": null,
+      "amount": null,
+      "currency": null,
+      "context_quote": "Хорошо. И ещё перезвоните мне после обеда.",
+      "audio_start": 14.15,
+      "audio_end": 18.05,
+      "confidence": 1.0,
+      "status": "proposed",
+      "uncertainty": []
+    },
+    {
+      "type": "payment",
+      "title": "Аванс 50000 рублей за серверы",
+      "owner": "user",
+      "due_date": null,
+      "due_time": null,
+      "amount": "50000",
+      "currency": "RUB",
+      "context_quote": "Обязательно перезвоню. А аванс — пятьдесят тысяч, нужно внести до встречи.",
+      "audio_start": 18.45,
+      "audio_end": 25.02,
+      "confidence": 1.0,
+      "status": "needs_clarification",
+      "uncertainty": [
+        "дата аванса не определена — только «до встречи»"
+      ]
+    }
+  ],
+  "notes": "Несколько договорённостей в одном разговоре (проверка множественного извлечения)."
+}

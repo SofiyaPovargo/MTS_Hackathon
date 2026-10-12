@@ -1,0 +1,60 @@
+{
+  "id": "payment_03",
+  "category": "payment_with_date",
+  "conversation_date": "2026-10-05",
+  "user_timezone": "Europe/Moscow",
+  "participants": {
+    "operator": "мастер (ремонт техники)",
+    "client": "клиент"
+  },
+  "dialogue": [
+    {
+      "speaker": "client",
+      "text": "Здравствуйте, это ремонт техники? Вопрос по оплате за ремонт холодильника.",
+      "start": 0.0,
+      "end": 6.57
+    },
+    {
+      "speaker": "operator",
+      "text": "Да, здравствуйте. Ремонт завершён, стоимость — четыре тысячи рублей.",
+      "start": 6.97,
+      "end": 13.03
+    },
+    {
+      "speaker": "client",
+      "text": "Когда нужно оплатить?",
+      "start": 13.43,
+      "end": 15.58
+    },
+    {
+      "speaker": "operator",
+      "text": "Оплату можно внести до двадцатого числа, наличными или переводом.",
+      "start": 15.98,
+      "end": 21.8
+    },
+    {
+      "speaker": "client",
+      "text": "Хорошо, оплачу до двадцатого.",
+      "start": 22.2,
+      "end": 25.02
+    }
+  ],
+  "expected_commitments": [
+    {
+      "type": "payment",
+      "title": "Оплата ремонта холодильника 4000 рублей",
+      "owner": "user",
+      "due_date": "2026-10-20",
+      "due_time": null,
+      "amount": "4000",
+      "currency": "RUB",
+      "context_quote": "Оплату можно внести до двадцатого числа, наличными или переводом.",
+      "audio_start": 15.98,
+      "audio_end": 21.8,
+      "confidence": 1.0,
+      "status": "proposed",
+      "uncertainty": []
+    }
+  ],
+  "notes": "Платёж с датой «до 20 числа» (20.10)."
+}

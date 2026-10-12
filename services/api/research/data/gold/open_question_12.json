@@ -1,0 +1,50 @@
+{
+  "id": "open_question_12",
+  "category": "open_question",
+  "conversation_date": "2026-10-05",
+  "user_timezone": "Europe/Moscow",
+  "participants": {
+    "operator": "транспортная компания",
+    "client": "клиент"
+  },
+  "dialogue": [
+    {
+      "speaker": "client",
+      "text": "Здравствуйте, а можно возить оборудование с холодильниками?",
+      "start": 0.0,
+      "end": 5.32
+    },
+    {
+      "speaker": "operator",
+      "text": "Нужно уточнить у юриста, я перезвоню вам.",
+      "start": 5.72,
+      "end": 9.53
+    },
+    {
+      "speaker": "client",
+      "text": "Хорошо.",
+      "start": 9.93,
+      "end": 11.33
+    }
+  ],
+  "expected_commitments": [
+    {
+      "type": "open_question",
+      "title": "Допустимость перевозки оборудования с температурным режимом",
+      "owner": "counterparty",
+      "due_date": null,
+      "due_time": null,
+      "amount": null,
+      "currency": null,
+      "context_quote": "Нужно уточнить у юриста, я перезвоню вам.",
+      "audio_start": 5.72,
+      "audio_end": 9.53,
+      "confidence": 1.0,
+      "status": "needs_clarification",
+      "uncertainty": [
+        "вопрос не решён, ответа пока нет"
+      ]
+    }
+  ],
+  "notes": "Открытый вопрос без ответа → needs_clarification."
+}

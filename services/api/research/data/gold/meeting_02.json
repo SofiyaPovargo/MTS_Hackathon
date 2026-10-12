@@ -1,0 +1,60 @@
+{
+  "id": "meeting_02",
+  "category": "meeting_with_time",
+  "conversation_date": "2026-10-05",
+  "user_timezone": "Europe/Moscow",
+  "participants": {
+    "operator": "Алексей (банк)",
+    "client": "клиент"
+  },
+  "dialogue": [
+    {
+      "speaker": "operator",
+      "text": "Добрый день! Алексей из банка, по вашей заявке на кредит.",
+      "start": 0.0,
+      "end": 5.15
+    },
+    {
+      "speaker": "client",
+      "text": "Добрый день, да, слушаю.",
+      "start": 5.55,
+      "end": 7.95
+    },
+    {
+      "speaker": "operator",
+      "text": "Нам нужно созвониться для уточнения деталей. Предлагаю во вторник в пятнадцать ноль-ноль.",
+      "start": 8.35,
+      "end": 16.17
+    },
+    {
+      "speaker": "client",
+      "text": "Вторник в три часа дня мне подходит.",
+      "start": 16.57,
+      "end": 19.97
+    },
+    {
+      "speaker": "operator",
+      "text": "Отлично, тогда созваниваемся во вторник в пятнадцать ноль-ноль.",
+      "start": 20.37,
+      "end": 26.02
+    }
+  ],
+  "expected_commitments": [
+    {
+      "type": "meeting",
+      "title": "Созвон для уточнения деталей по кредиту",
+      "owner": "user",
+      "due_date": "2026-10-06",
+      "due_time": "15:00:00",
+      "amount": null,
+      "currency": null,
+      "context_quote": "Нам нужно созвониться для уточнения деталей. Предлагаю во вторник в пятнадцать ноль-ноль.",
+      "audio_start": 8.35,
+      "audio_end": 16.17,
+      "confidence": 1.0,
+      "status": "proposed",
+      "uncertainty": []
+    }
+  ],
+  "notes": "Встреча с точным временем: вторник 06.10 в 15:00."
+}

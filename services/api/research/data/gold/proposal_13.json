@@ -1,0 +1,51 @@
+{
+  "id": "proposal_13",
+  "category": "proposal_not_confirmed",
+  "conversation_date": "2026-10-05",
+  "user_timezone": "Europe/Moscow",
+  "participants": {
+    "operator": "отдел продаж",
+    "client": "клиент"
+  },
+  "dialogue": [
+    {
+      "speaker": "operator",
+      "text": "Добрый день! Мы могли бы сделать вам скидку десять процентов, если вы оплатите сразу.",
+      "start": 0.0,
+      "end": 7.48
+    },
+    {
+      "speaker": "client",
+      "text": "Мне нужно подумать.",
+      "start": 7.88,
+      "end": 9.87
+    },
+    {
+      "speaker": "operator",
+      "text": "Конечно, без спешки.",
+      "start": 10.27,
+      "end": 12.33
+    }
+  ],
+  "expected_commitments": [
+    {
+      "type": "payment",
+      "title": "Скидка 10% при оплате сразу",
+      "owner": "unknown",
+      "due_date": null,
+      "due_time": null,
+      "amount": null,
+      "currency": null,
+      "context_quote": "Добрый день! Мы могли бы сделать вам скидку десять процентов, если вы оплатите сразу.",
+      "audio_start": 0.0,
+      "audio_end": 7.48,
+      "confidence": 1.0,
+      "status": "needs_clarification",
+      "uncertainty": [
+        "предложение, а не подтверждённое соглашение",
+        "не указаны дата и сумма"
+      ]
+    }
+  ],
+  "notes": "Тест-кейс из скилла: отделять предложение от подтверждённого соглашения."
+}

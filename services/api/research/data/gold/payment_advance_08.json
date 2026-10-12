@@ -1,0 +1,48 @@
+{
+  "id": "payment_advance_08",
+  "category": "payment_amount",
+  "conversation_date": "2026-10-05",
+  "user_timezone": "Europe/Moscow",
+  "participants": {
+    "operator": "ремонтно-строительная бригада",
+    "client": "клиент"
+  },
+  "dialogue": [
+    {
+      "speaker": "client",
+      "text": "Добрый день, это по ремонту квартиры. Сколько стартовый платёж?",
+      "start": 0.0,
+      "end": 5.65
+    },
+    {
+      "speaker": "operator",
+      "text": "Здравствуйте. Аванс — пятнадцать тысяч рублей, переведите до среды.",
+      "start": 6.05,
+      "end": 12.03
+    },
+    {
+      "speaker": "client",
+      "text": "Окей, переведу аванс до среды.",
+      "start": 12.43,
+      "end": 15.33
+    }
+  ],
+  "expected_commitments": [
+    {
+      "type": "payment",
+      "title": "Аванс за ремонт квартиры 15000 рублей",
+      "owner": "user",
+      "due_date": "2026-10-07",
+      "due_time": null,
+      "amount": "15000",
+      "currency": "RUB",
+      "context_quote": "Здравствуйте. Аванс — пятнадцать тысяч рублей, переведите до среды.",
+      "audio_start": 6.05,
+      "audio_end": 12.03,
+      "confidence": 1.0,
+      "status": "proposed",
+      "uncertainty": []
+    }
+  ],
+  "notes": "Платёж с суммой 15 000 руб. и датой «до среды» (07.10)."
+}

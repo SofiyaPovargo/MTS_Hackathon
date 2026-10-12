@@ -1,0 +1,54 @@
+{
+  "id": "explicit_deadline_01",
+  "category": "explicit_deadline",
+  "conversation_date": "2026-10-05",
+  "user_timezone": "Europe/Moscow",
+  "participants": {
+    "operator": "Анна (менеджер клиники)",
+    "client": "Игорь Владимирович"
+  },
+  "dialogue": [
+    {
+      "speaker": "operator",
+      "text": "Здравствуйте, Игорь Владимирович! Я Анна из клиники «Восстановление», по поводу вашего курса реабилитации.",
+      "start": 0.0,
+      "end": 9.23
+    },
+    {
+      "speaker": "client",
+      "text": "Здравствуйте, Анна. Да, я вас внимательно слушаю.",
+      "start": 9.63,
+      "end": 14.12
+    },
+    {
+      "speaker": "operator",
+      "text": "Мы подготовили для вас договор, я пришлю его до пятницы удобным вам способом.",
+      "start": 14.52,
+      "end": 21.33
+    },
+    {
+      "speaker": "client",
+      "text": "Хорошо, буду ждать. Спасибо!",
+      "start": 21.73,
+      "end": 24.47
+    }
+  ],
+  "expected_commitments": [
+    {
+      "type": "promise",
+      "title": "Менеджер пришлёт договор на реабилитацию",
+      "owner": "counterparty",
+      "due_date": "2026-10-09",
+      "due_time": null,
+      "amount": null,
+      "currency": null,
+      "context_quote": "Мы подготовили для вас договор, я пришлю его до пятницы удобным вам способом.",
+      "audio_start": 14.52,
+      "audio_end": 21.33,
+      "confidence": 1.0,
+      "status": "proposed",
+      "uncertainty": []
+    }
+  ],
+  "notes": "Явный дедлайн «до пятницы» (09.10). Время не указано."
+}

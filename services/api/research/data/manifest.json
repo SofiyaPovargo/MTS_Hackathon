@@ -1,0 +1,86 @@
+[
+  {
+    "id": "explicit_deadline_01",
+    "category": "explicit_deadline",
+    "num_commitments": 1,
+    "split": "eval"
+  },
+  {
+    "id": "meeting_02",
+    "category": "meeting_with_time",
+    "num_commitments": 1,
+    "split": "eval"
+  },
+  {
+    "id": "payment_03",
+    "category": "payment_with_date",
+    "num_commitments": 1,
+    "split": "eval"
+  },
+  {
+    "id": "ambiguous_04",
+    "category": "ambiguous",
+    "num_commitments": 1,
+    "split": "eval"
+  },
+  {
+    "id": "contradictory_05",
+    "category": "contradictory_dates",
+    "num_commitments": 1,
+    "split": "eval"
+  },
+  {
+    "id": "no_commitment_06",
+    "category": "no_commitment",
+    "num_commitments": 0,
+    "split": "eval"
+  },
+  {
+    "id": "follow_up_07",
+    "category": "follow_up",
+    "num_commitments": 1,
+    "split": "eval"
+  },
+  {
+    "id": "payment_advance_08",
+    "category": "payment_amount",
+    "num_commitments": 1,
+    "split": "eval"
+  },
+  {
+    "id": "deadline_month_end_09",
+    "category": "deadline",
+    "num_commitments": 1,
+    "split": "eval"
+  },
+  {
+    "id": "meeting_office_10",
+    "category": "meeting_with_time",
+    "num_commitments": 1,
+    "split": "eval"
+  },
+  {
+    "id": "multiple_11",
+    "category": "multiple_commitments",
+    "num_commitments": 3,
+    "split": "eval"
+  },
+  {
+    "id": "open_question_12",
+    "category": "open_question",
+    "num_commitments": 1,
+    "split": "eval"
+  },
+  {
+    "id": "proposal_13",
+    "category": "proposal_not_confirmed",
+    "num_commitments": 1,
+    "split": "eval"
+  },
+  {
+    "id": "delivery_payment_14",
+    "category": "payment_amount",
+    "num_commitments": 1,
+    "split": "eval"
+  }
+]

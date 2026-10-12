@@ -1,0 +1,8 @@
+.venv-tone/
+data/audio/
+data/asr/
+data/transcripts/
+.venv/
+.ipynb_checkpoints/
+.env
+__pycache__/
