@@ -1,0 +1,23 @@
+[project]
+name = "research"
+version = "0.1.0"
+description = "ML-pipeline research (commitment extraction): notebooks, schemas, gold dataset"
+requires-python = ">=3.11"
+dependencies = [
+    "huggingface_hub",
+    "instructor",
+    "jupyter",
+    "openai",
+    "pydantic>=2",
+    "python-dotenv",
+]
+
+[dependency-groups]
+dev = [
+    "mypy",
+    "pytest",
+    "ruff",
+]
+
+[tool.uv]
+package = false

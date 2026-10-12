@@ -9,16 +9,17 @@ from __future__ import annotations
 import json
 import sys
 from datetime import date, time
+from decimal import Decimal
 from pathlib import Path
 
 from schemas import (
     Commitment,
+    CommitmentStatus,
     CommitmentType,
     DialogueTurn,
     ExpectedCommitment,
     GoldCase,
     Owner,
-    CommitmentStatus,
 )
 
 DATA_DIR = Path(__file__).resolve().parent / "data"
@@ -109,7 +110,7 @@ CASES: list[GoldCase] = [
                 title="Оплата ремонта холодильника 4000 рублей",
                 owner=Owner.user,
                 due_date=date(2026, 10, 20),
-                amount="4000",
+                amount=Decimal(4000),
                 currency="RUB",
             ),
         ],
@@ -220,7 +221,7 @@ CASES: list[GoldCase] = [
                 title="Аванс за ремонт квартиры 15000 рублей",
                 owner=Owner.user,
                 due_date=date(2026, 10, 7),
-                amount="15000",
+                amount=Decimal(15000),
                 currency="RUB",
             ),
         ],
@@ -306,7 +307,7 @@ CASES: list[GoldCase] = [
                 type=CommitmentType.payment,
                 title="Аванс 50000 рублей за серверы",
                 owner=Owner.user,
-                amount="50000",
+                amount=Decimal(50000),
                 currency="RUB",
                 status=CommitmentStatus.needs_clarification,
                 uncertainty=["дата аванса не определена — только «до встречи»"],
@@ -378,7 +379,7 @@ CASES: list[GoldCase] = [
                 type=CommitmentType.payment,
                 title="Оплата доставки заказа 500 рублей",
                 owner=Owner.user,
-                amount="500",
+                amount=Decimal(500),
                 currency="RUB",
                 status=CommitmentStatus.needs_clarification,
                 uncertainty=["не указан срок оплаты — только «при получении»"],
