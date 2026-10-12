@@ -12,19 +12,19 @@
       "speaker": "client",
       "text": "Добрый день, это по ремонту квартиры. Сколько стартовый платёж?",
       "start": 0.0,
-      "end": 5.65
+      "end": 4.24
     },
     {
       "speaker": "operator",
       "text": "Здравствуйте. Аванс — пятнадцать тысяч рублей, переведите до среды.",
-      "start": 6.05,
-      "end": 12.03
+      "start": 4.59,
+      "end": 8.84
     },
     {
       "speaker": "client",
       "text": "Окей, переведу аванс до среды.",
-      "start": 12.43,
-      "end": 15.33
+      "start": 9.19,
+      "end": 11.43
     }
   ],
   "expected_commitments": [
@@ -37,8 +37,8 @@
       "amount": "15000",
       "currency": "RUB",
       "context_quote": "Здравствуйте. Аванс — пятнадцать тысяч рублей, переведите до среды.",
-      "audio_start": 6.05,
-      "audio_end": 12.03,
+      "audio_start": 4.59,
+      "audio_end": 8.84,
       "confidence": 1.0,
       "status": "proposed",
       "uncertainty": []

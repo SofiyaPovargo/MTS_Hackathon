@@ -12,19 +12,19 @@
       "speaker": "operator",
       "text": "Добрый день! Мы могли бы сделать вам скидку десять процентов, если вы оплатите сразу.",
       "start": 0.0,
-      "end": 7.48
+      "end": 5.11
     },
     {
       "speaker": "client",
       "text": "Мне нужно подумать.",
-      "start": 7.88,
-      "end": 9.87
+      "start": 5.46,
+      "end": 6.88
     },
     {
       "speaker": "operator",
       "text": "Конечно, без спешки.",
-      "start": 10.27,
-      "end": 12.33
+      "start": 7.22,
+      "end": 8.7
     }
   ],
   "expected_commitments": [
@@ -38,7 +38,7 @@
       "currency": null,
       "context_quote": "Добрый день! Мы могли бы сделать вам скидку десять процентов, если вы оплатите сразу.",
       "audio_start": 0.0,
-      "audio_end": 7.48,
+      "audio_end": 5.11,
       "confidence": 1.0,
       "status": "needs_clarification",
       "uncertainty": [

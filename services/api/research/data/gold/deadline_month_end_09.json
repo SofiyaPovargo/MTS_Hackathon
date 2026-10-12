@@ -12,19 +12,19 @@
       "speaker": "client",
       "text": "Когда сдадите отчётные документы?",
       "start": 0.0,
-      "end": 3.15
+      "end": 2.12
     },
     {
       "speaker": "operator",
       "text": "Документы будут готовы, мы сдадим их до конца месяца.",
-      "start": 3.55,
-      "end": 8.37
+      "start": 2.48,
+      "end": 5.79
     },
     {
       "speaker": "client",
       "text": "Понял, ждём.",
-      "start": 8.77,
-      "end": 10.17
+      "start": 6.14,
+      "end": 7.09
     }
   ],
   "expected_commitments": [
@@ -37,8 +37,8 @@
       "amount": null,
       "currency": null,
       "context_quote": "Документы будут готовы, мы сдадим их до конца месяца.",
-      "audio_start": 3.55,
-      "audio_end": 8.37,
+      "audio_start": 2.48,
+      "audio_end": 5.79,
       "confidence": 1.0,
       "status": "proposed",
       "uncertainty": []

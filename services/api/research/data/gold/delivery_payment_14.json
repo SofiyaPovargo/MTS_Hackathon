@@ -12,25 +12,25 @@
       "speaker": "operator",
       "text": "Здравствуйте! Курьерская служба, по поводу доставки вашего заказа.",
       "start": 0.0,
-      "end": 5.9
+      "end": 4.54
     },
     {
       "speaker": "client",
       "text": "Здравствуйте, сколько будет стоить доставка?",
-      "start": 6.3,
-      "end": 10.37
+      "start": 4.89,
+      "end": 7.4
     },
     {
       "speaker": "operator",
       "text": "Доставка — пятьсот рублей, оплатите при получении.",
-      "start": 10.77,
-      "end": 15.33
+      "start": 7.75,
+      "end": 10.76
     },
     {
       "speaker": "client",
       "text": "Отлично, договорились.",
-      "start": 15.73,
-      "end": 17.97
+      "start": 11.11,
+      "end": 12.78
     }
   ],
   "expected_commitments": [
@@ -43,8 +43,8 @@
       "amount": "500",
       "currency": "RUB",
       "context_quote": "Доставка — пятьсот рублей, оплатите при получении.",
-      "audio_start": 10.77,
-      "audio_end": 15.33,
+      "audio_start": 7.75,
+      "audio_end": 10.76,
       "confidence": 1.0,
       "status": "needs_clarification",
       "uncertainty": [

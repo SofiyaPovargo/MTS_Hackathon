@@ -12,19 +12,19 @@
       "speaker": "client",
       "text": "Здравствуйте, а можно возить оборудование с холодильниками?",
       "start": 0.0,
-      "end": 5.32
+      "end": 3.41
     },
     {
       "speaker": "operator",
       "text": "Нужно уточнить у юриста, я перезвоню вам.",
-      "start": 5.72,
-      "end": 9.53
+      "start": 3.76,
+      "end": 6.26
     },
     {
       "speaker": "client",
       "text": "Хорошо.",
-      "start": 9.93,
-      "end": 11.33
+      "start": 6.61,
+      "end": 7.31
     }
   ],
   "expected_commitments": [
@@ -37,8 +37,8 @@
       "amount": null,
       "currency": null,
       "context_quote": "Нужно уточнить у юриста, я перезвоню вам.",
-      "audio_start": 5.72,
-      "audio_end": 9.53,
+      "audio_start": 3.76,
+      "audio_end": 6.26,
       "confidence": 1.0,
       "status": "needs_clarification",
       "uncertainty": [

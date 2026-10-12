@@ -12,25 +12,25 @@
       "speaker": "client",
       "text": "Здравствуйте, по моей накладной когда будет доставка?",
       "start": 0.0,
-      "end": 4.82
+      "end": 3.04
     },
     {
       "speaker": "operator",
       "text": "Добрый день! Доставка завтра, то есть к пятнице к двенадцати.",
-      "start": 5.22,
-      "end": 10.7
+      "start": 3.39,
+      "end": 7.2
     },
     {
       "speaker": "client",
       "text": "Но сегодня уже пятница.",
-      "start": 11.1,
-      "end": 13.42
+      "start": 7.55,
+      "end": 9.31
     },
     {
       "speaker": "operator",
       "text": "Ой, прошу прощения. Значит, доставка завтра, в субботу.",
-      "start": 13.82,
-      "end": 18.8
+      "start": 9.66,
+      "end": 13.89
     }
   ],
   "expected_commitments": [
@@ -43,8 +43,8 @@
       "amount": null,
       "currency": null,
       "context_quote": "Добрый день! Доставка завтра, то есть к пятнице к двенадцати.",
-      "audio_start": 5.22,
-      "audio_end": 10.7,
+      "audio_start": 3.39,
+      "audio_end": 7.2,
       "confidence": 1.0,
       "status": "needs_clarification",
       "uncertainty": [

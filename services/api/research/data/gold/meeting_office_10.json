@@ -12,25 +12,25 @@
       "speaker": "operator",
       "text": "Здравствуйте! Это офис продаж. Предлагаю встретиться у нас в офисе, обсудим условия.",
       "start": 0.0,
-      "end": 7.4
+      "end": 5.9
     },
     {
       "speaker": "client",
       "text": "Когда вам удобно?",
-      "start": 7.8,
-      "end": 9.62
+      "start": 6.25,
+      "end": 7.34
     },
     {
       "speaker": "operator",
       "text": "Давайте в пятницу в десять утра.",
-      "start": 10.02,
-      "end": 13.08
+      "start": 7.69,
+      "end": 9.53
     },
     {
       "speaker": "client",
       "text": "В пятницу в десять утра подходит, приеду.",
-      "start": 13.48,
-      "end": 17.3
+      "start": 9.88,
+      "end": 12.7
     }
   ],
   "expected_commitments": [
@@ -43,8 +43,8 @@
       "amount": null,
       "currency": null,
       "context_quote": "Давайте в пятницу в десять утра.",
-      "audio_start": 10.02,
-      "audio_end": 13.08,
+      "audio_start": 7.69,
+      "audio_end": 9.53,
       "confidence": 1.0,
       "status": "proposed",
       "uncertainty": []

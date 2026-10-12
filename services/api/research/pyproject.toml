@@ -7,9 +7,12 @@ dependencies = [
     "huggingface_hub",
     "instructor",
     "jupyter",
+    "numpy>=2.4.6",
+    "omegaconf>=2.4.0",
     "openai",
     "pydantic>=2",
     "python-dotenv",
+    "torch>=2.14.1",
 ]
 
 [dependency-groups]
