@@ -1,0 +1,738 @@
+{
+ "explicit_deadline_01": {
+  "expected": 1,
+  "extracted": 1,
+  "matched": 1,
+  "recall": 1.0,
+  "precision": 1.0,
+  "type_match": 0.0,
+  "owner_match": 1.0,
+  "date_match": 0.0,
+  "commitments": [
+   {
+    "type": "deadline",
+    "title": "Договор будет отправлен до пятницы",
+    "owner": "counterparty",
+    "due_date": null,
+    "due_time": null,
+    "amount": null,
+    "currency": null,
+    "context_quote": "мы подготовили для вас договор я пришлю его до пятницы удобным вам способом",
+    "audio_start": 10.65,
+    "audio_end": 14.46,
+    "confidence": 1.0,
+    "status": "confirmed",
+    "uncertainty": []
+   }
+  ],
+  "turns": [
+   {
+    "speaker": "operator",
+    "text": "здравствуйте игорь владимирович я анна из клиники восстановления по поводу вашего курса реабилитации",
+    "start": 0.39,
+    "end": 6.06
+   },
+   {
+    "speaker": "client",
+    "text": "здравствуйте анна да я вас внимательно слушаю",
+    "start": 6.72,
+    "end": 9.99
+   },
+   {
+    "speaker": "operator",
+    "text": "мы подготовили для вас договор я пришлю его до пятницы удобным вам способом",
+    "start": 10.65,
+    "end": 14.46
+   },
+   {
+    "speaker": "client",
+    "text": "хорошо буду ждать спасибо",
+    "start": 15.06,
+    "end": 16.89
+   }
+  ]
+ },
+ "meeting_02": {
+  "expected": 1,
+  "extracted": 1,
+  "matched": 0,
+  "recall": 0.0,
+  "precision": 0.0,
+  "type_match": null,
+  "owner_match": null,
+  "date_match": null,
+  "commitments": [
+   {
+    "type": "meeting",
+    "title": "Созвониться во вторник в 15:00",
+    "owner": "user",
+    "due_date": null,
+    "due_time": null,
+    "amount": null,
+    "currency": null,
+    "context_quote": "вторник в три часа дня мне подходит",
+    "audio_start": 11.7,
+    "audio_end": 13.71,
+    "confidence": 1.0,
+    "status": "confirmed",
+    "uncertainty": []
+   }
+  ],
+  "turns": [
+   {
+    "speaker": "operator",
+    "text": "добрый день алексей из банка по вашей заявке на кредит",
+    "start": 0.39,
+    "end": 3.6
+   },
+   {
+    "speaker": "client",
+    "text": "добрый день да слушаю",
+    "start": 4.35,
+    "end": 5.79
+   },
+   {
+    "speaker": "operator",
+    "text": "нам нужно созвониться для уточнения деталей предлагаю во вторник пятнадцать ноль ноль",
+    "start": 6.6,
+    "end": 10.92
+   },
+   {
+    "speaker": "client",
+    "text": "вторник в три часа дня мне подходит",
+    "start": 11.7,
+    "end": 13.71
+   },
+   {
+    "speaker": "operator",
+    "text": "отлично тогда созваниваемся во вторник в пятнадцать ноль ноль",
+    "start": 14.43,
+    "end": 17.52
+   }
+  ]
+ },
+ "payment_03": {
+  "expected": 1,
+  "extracted": 1,
+  "matched": 1,
+  "recall": 1.0,
+  "precision": 1.0,
+  "type_match": 1.0,
+  "owner_match": 1.0,
+  "date_match": 1.0,
+  "commitments": [
+   {
+    "type": "payment",
+    "title": "Оплата за ремонт холодильника",
+    "owner": "user",
+    "due_date": "2026-10-20",
+    "due_time": null,
+    "amount": null,
+    "currency": null,
+    "context_quote": "оплачу до двадцатого",
+    "audio_start": 16.17,
+    "audio_end": 18.09,
+    "confidence": 1.0,
+    "status": "confirmed",
+    "uncertainty": []
+   }
+  ],
+  "turns": [
+   {
+    "speaker": "operator",
+    "text": "здравствуйте это ремонт техники вопрос по оплате за ремонт холодильника",
+    "start": 0.21,
+    "end": 4.65
+   },
+   {
+    "speaker": "client",
+    "text": "да здравствуйте ремонт завершен стоимость четыре тысячи рублей",
+    "start": 5.7,
+    "end": 9.54
+   },
+   {
+    "speaker": "operator",
+    "text": "когда нужно оплатить",
+    "start": 10.29,
+    "end": 11.4
+   },
+   {
+    "speaker": "client",
+    "text": "оплату можно внести до двадцатого числа наличными или переводом",
+    "start": 12.03,
+    "end": 15.54
+   },
+   {
+    "speaker": "operator",
+    "text": "хорошо оплачу до двадцатого",
+    "start": 16.17,
+    "end": 18.09
+   }
+  ]
+ },
+ "ambiguous_04": {
+  "expected": 1,
+  "extracted": 1,
+  "matched": 1,
+  "recall": 1.0,
+  "precision": 1.0,
+  "type_match": 0.0,
+  "owner_match": 1.0,
+  "date_match": 1.0,
+  "commitments": [
+   {
+    "type": "follow_up",
+    "title": "Связаться, когда будет готов заказ",
+    "owner": "counterparty",
+    "due_date": null,
+    "due_time": null,
+    "amount": null,
+    "currency": null,
+    "context_quote": "точный срок пока назвать не могу наберем вас",
+    "audio_start": 12.18,
+    "audio_end": 14.61,
+    "confidence": 1.0,
+    "status": "proposed",
+    "uncertainty": [
+     "не ясно, когда именно будет готов заказ",
+     "не указано, когда будет произведена связь"
+    ]
+   }
+  ],
+  "turns": [
+   {
+    "speaker": "operator",
+    "text": "здравствуйте когда будет готов мой заказ на печать визиток",
+    "start": 0.18,
+    "end": 3.42
+   },
+   {
+    "speaker": "client",
+    "text": "здравствуйте постараемся сделать быстро как только напечатаем сразу сообщим",
+    "start": 4.29,
+    "end": 8.94
+   },
+   {
+    "speaker": "operator",
+    "text": "мне бы хотя бы примерно знать срок",
+    "start": 9.63,
+    "end": 11.58
+   },
+   {
+    "speaker": "client",
+    "text": "точный срок пока назвать не могу наберем вас",
+    "start": 12.18,
+    "end": 14.61
+   }
+  ]
+ },
+ "contradictory_05": {
+  "expected": 1,
+  "extracted": 1,
+  "matched": 0,
+  "recall": 0.0,
+  "precision": 0.0,
+  "type_match": null,
+  "owner_match": null,
+  "date_match": null,
+  "commitments": [
+   {
+    "type": "deadline",
+    "title": "Доставка в субботу",
+    "owner": "counterparty",
+    "due_date": "2026-10-07",
+    "due_time": null,
+    "amount": null,
+    "currency": null,
+    "context_quote": "значит доставка завтра в субботу",
+    "audio_start": 11.67,
+    "audio_end": 13.62,
+    "confidence": 1.0,
+    "status": "confirmed",
+    "uncertainty": []
+   }
+  ],
+  "turns": [
+   {
+    "speaker": "operator",
+    "text": "здравствуйте по моей накладной когда будет доставка",
+    "start": 0.18,
+    "end": 2.82
+   },
+   {
+    "speaker": "client",
+    "text": "добрый день доставка завтра то есть в пятницу к двенадцати",
+    "start": 3.72,
+    "end": 6.9
+   },
+   {
+    "speaker": "operator",
+    "text": "но сегодня уже пятница",
+    "start": 7.74,
+    "end": 9.12
+   },
+   {
+    "speaker": "client",
+    "text": "ой прошу прощения",
+    "start": 9.96,
+    "end": 11.01
+   },
+   {
+    "speaker": "client",
+    "text": "значит доставка завтра в субботу",
+    "start": 11.67,
+    "end": 13.62
+   }
+  ]
+ },
+ "no_commitment_06": {
+  "expected": 0,
+  "extracted": 0,
+  "matched": 0,
+  "recall": 1.0,
+  "precision": 1.0,
+  "type_match": null,
+  "owner_match": null,
+  "date_match": null,
+  "commitments": [],
+  "turns": [
+   {
+    "speaker": "operator",
+    "text": "автосервис форсаж здравствуйте",
+    "start": 0.15,
+    "end": 1.86
+   },
+   {
+    "speaker": "client",
+    "text": "здравствуйте я хотел узнать готовы ли машина",
+    "start": 2.58,
+    "end": 5.37
+   },
+   {
+    "speaker": "operator",
+    "text": "да работа завершена можете забирать",
+    "start": 6.3,
+    "end": 8.58
+   },
+   {
+    "speaker": "client",
+    "text": "отлично спасибо за информацию",
+    "start": 9.36,
+    "end": 11.13
+   },
+   {
+    "speaker": "operator",
+    "text": "всего доброго",
+    "start": 11.97,
+    "end": 12.57
+   }
+  ]
+ },
+ "follow_up_07": {
+  "expected": 1,
+  "extracted": 1,
+  "matched": 1,
+  "recall": 1.0,
+  "precision": 1.0,
+  "type_match": 1.0,
+  "owner_match": 1.0,
+  "date_match": 0.0,
+  "commitments": [
+   {
+    "type": "follow_up",
+    "title": "Перезвон в четверг после обеда",
+    "owner": "counterparty",
+    "due_date": null,
+    "due_time": null,
+    "amount": null,
+    "currency": null,
+    "context_quote": "я перезвоню вам в четверг после обеда",
+    "audio_start": 9.84,
+    "audio_end": 12.15,
+    "confidence": 1.0,
+    "status": "confirmed",
+    "uncertainty": []
+   }
+  ],
+  "turns": [
+   {
+    "speaker": "operator",
+    "text": "здравствуйте наталья петровна это бухгалтерия компании ромашка",
+    "start": 0.21,
+    "end": 3.93
+   },
+   {
+    "speaker": "client",
+    "text": "здравствуйте я вас слушаю",
+    "start": 4.53,
+    "end": 6.0
+   },
+   {
+    "speaker": "operator",
+    "text": "по вашему вопросу документах я перезвоню вам в четверг после обеда",
+    "start": 6.63,
+    "end": 9.84
+   },
+   {
+    "speaker": "client",
+    "text": "хорошо буду ждать звонка",
+    "start": 10.53,
+    "end": 12.15
+   }
+  ]
+ },
+ "payment_advance_08": {
+  "expected": 1,
+  "extracted": 1,
+  "matched": 1,
+  "recall": 1.0,
+  "precision": 1.0,
+  "type_match": 1.0,
+  "owner_match": 0.0,
+  "date_match": 0.0,
+  "commitments": [
+   {
+    "type": "payment",
+    "title": "Аванс в размере 15000 рублей до среды",
+    "owner": "counterparty",
+    "due_date": "2026-10-11",
+    "due_time": null,
+    "amount": "15000",
+    "currency": "руб",
+    "context_quote": "аванс пятнадцать тысяч рублей переведите до среды",
+    "audio_start": 5.94,
+    "audio_end": 8.64,
+    "confidence": 1.0,
+    "status": "confirmed",
+    "uncertainty": []
+   }
+  ],
+  "turns": [
+   {
+    "speaker": "operator",
+    "text": "добрый день это по ремонту квартиры сколько стартовый платеж",
+    "start": 0.15,
+    "end": 3.93
+   },
+   {
+    "speaker": "client",
+    "text": "здравствуйте",
+    "start": 4.68,
+    "end": 5.28
+   },
+   {
+    "speaker": "client",
+    "text": "аванс пятнадцать тысяч рублей переведите до среды",
+    "start": 5.94,
+    "end": 8.64
+   },
+   {
+    "speaker": "operator",
+    "text": "окей переведу аванс до среды",
+    "start": 9.39,
+    "end": 11.16
+   }
+  ]
+ },
+ "deadline_month_end_09": {
+  "expected": 1,
+  "extracted": 1,
+  "matched": 1,
+  "recall": 1.0,
+  "precision": 1.0,
+  "type_match": 1.0,
+  "owner_match": 1.0,
+  "date_match": 1.0,
+  "commitments": [
+   {
+    "type": "deadline",
+    "title": "Сдадут отчетные документы до конца месяца",
+    "owner": "counterparty",
+    "due_date": "2026-10-31",
+    "due_time": null,
+    "amount": null,
+    "currency": null,
+    "context_quote": "документы будут готовы мы сдадим их до конца месяца",
+    "audio_start": 2.7,
+    "audio_end": 5.46,
+    "confidence": 1.0,
+    "status": "confirmed",
+    "uncertainty": []
+   }
+  ],
+  "turns": [
+   {
+    "speaker": "operator",
+    "text": "когда сдадите отчетные документы",
+    "start": 0.15,
+    "end": 1.98
+   },
+   {
+    "speaker": "client",
+    "text": "документы будут готовы мы сдадим их до конца месяца",
+    "start": 2.7,
+    "end": 5.46
+   },
+   {
+    "speaker": "operator",
+    "text": "понял ждем",
+    "start": 6.21,
+    "end": 6.84
+   }
+  ]
+ },
+ "meeting_office_10": {
+  "expected": 1,
+  "extracted": 1,
+  "matched": 1,
+  "recall": 1.0,
+  "precision": 1.0,
+  "type_match": 1.0,
+  "owner_match": 0.0,
+  "date_match": 0.0,
+  "commitments": [
+   {
+    "type": "meeting",
+    "title": "Заметка о встрече",
+    "owner": "unknown",
+    "due_date": "2026-10-06",
+    "due_time": "10:00:00",
+    "amount": null,
+    "currency": null,
+    "context_quote": "в пятницу в десять утра подходит приеду",
+    "audio_start": 9.96,
+    "audio_end": 12.48,
+    "confidence": 1.0,
+    "status": "confirmed",
+    "uncertainty": []
+   }
+  ],
+  "turns": [
+   {
+    "speaker": "operator",
+    "text": "здравствуйте это офис продаж предлагаю встретиться у нас в офисе обсудим условия",
+    "start": 0.42,
+    "end": 5.64
+   },
+   {
+    "speaker": "client",
+    "text": "когда вам удобно",
+    "start": 6.27,
+    "end": 7.08
+   },
+   {
+    "speaker": "operator",
+    "text": "давайте в пятницу в десять утра",
+    "start": 7.77,
+    "end": 9.3
+   },
+   {
+    "speaker": "client",
+    "text": "в пятницу в десять утра подходит приеду",
+    "start": 9.96,
+    "end": 12.48
+   }
+  ]
+ },
+ "multiple_11": {
+  "expected": 3,
+  "extracted": 2,
+  "matched": 2,
+  "recall": 0.6666666666666666,
+  "precision": 1.0,
+  "type_match": 0.5,
+  "owner_match": 0.5,
+  "date_match": 0.5,
+  "commitments": [
+   {
+    "type": "meeting",
+    "title": "Перезвонить после обеда",
+    "owner": "user",
+    "due_date": null,
+    "due_time": null,
+    "amount": null,
+    "currency": null,
+    "context_quote": "перезвоните мне после обеда",
+    "audio_start": 10.47,
+    "audio_end": 13.47,
+    "confidence": 1.0,
+    "status": "confirmed",
+    "uncertainty": []
+   },
+   {
+    "type": "payment",
+    "title": "Внести аванс в размере 50000 рублей",
+    "owner": "user",
+    "due_date": null,
+    "due_time": null,
+    "amount": "50000",
+    "currency": "руб",
+    "context_quote": "аванс внесен",
+    "audio_start": 19.53,
+    "audio_end": 21.03,
+    "confidence": 1.0,
+    "status": "confirmed",
+    "uncertainty": []
+   }
+  ],
+  "turns": [
+   {
+    "speaker": "operator",
+    "text": "алло добрый день менеджер ольга компания техно поставка по вашему заказу на серверы",
+    "start": 0.57,
+    "end": 5.73
+   },
+   {
+    "speaker": "client",
+    "text": "здравствуйте да",
+    "start": 6.36,
+    "end": 7.29
+   },
+   {
+    "speaker": "operator",
+    "text": "договор пришлю завтра до конца дня",
+    "start": 8.01,
+    "end": 9.72
+   },
+   {
+    "speaker": "client",
+    "text": "хорошо и еще перезвоните мне после обеда",
+    "start": 10.47,
+    "end": 13.47
+   },
+   {
+    "speaker": "operator",
+    "text": "обязательно перезвоню",
+    "start": 14.13,
+    "end": 15.12
+   },
+   {
+    "speaker": "operator",
+    "text": "а аванс пятьдесят тысяч нужно внести до встречи",
+    "start": 15.9,
+    "end": 18.78
+   },
+   {
+    "speaker": "client",
+    "text": "записал аванс внесен",
+    "start": 19.53,
+    "end": 21.03
+   }
+  ]
+ },
+ "open_question_12": {
+  "expected": 1,
+  "extracted": 0,
+  "matched": 0,
+  "recall": 0.0,
+  "precision": 0.0,
+  "type_match": null,
+  "owner_match": null,
+  "date_match": null,
+  "commitments": [],
+  "turns": [
+   {
+    "speaker": "operator",
+    "text": "здравствуйте а можно возить оборудование с холодильниками",
+    "start": 0.18,
+    "end": 3.18
+   },
+   {
+    "speaker": "client",
+    "text": "нужно уточнить у юриста я перезвоню вам",
+    "start": 3.93,
+    "end": 6.06
+   },
+   {
+    "speaker": "operator",
+    "text": "хорошо",
+    "start": 6.69,
+    "end": 7.08
+   }
+  ]
+ },
+ "proposal_13": {
+  "expected": 1,
+  "extracted": 0,
+  "matched": 0,
+  "recall": 0.0,
+  "precision": 0.0,
+  "type_match": null,
+  "owner_match": null,
+  "date_match": null,
+  "commitments": [],
+  "turns": [
+   {
+    "speaker": "operator",
+    "text": "добрый день мы могли бы сделать вам скидку десять процентов если вы оплатите сразу",
+    "start": 0.36,
+    "end": 4.8
+   },
+   {
+    "speaker": "operator",
+    "text": "мне нужно подумать",
+    "start": 5.64,
+    "end": 6.66
+   },
+   {
+    "speaker": "operator",
+    "text": "конечно без спешки",
+    "start": 7.29,
+    "end": 8.46
+   }
+  ]
+ },
+ "delivery_payment_14": {
+  "expected": 1,
+  "extracted": 1,
+  "matched": 1,
+  "recall": 1.0,
+  "precision": 1.0,
+  "type_match": 1.0,
+  "owner_match": 1.0,
+  "date_match": 1.0,
+  "commitments": [
+   {
+    "type": "payment",
+    "title": "Оплата доставки при получении",
+    "owner": "user",
+    "due_date": null,
+    "due_time": null,
+    "amount": "500",
+    "currency": "RUB",
+    "context_quote": "оплатите при получении",
+    "audio_start": 7.8,
+    "audio_end": 10.5,
+    "confidence": 1.0,
+    "status": "confirmed",
+    "uncertainty": []
+   }
+  ],
+  "turns": [
+   {
+    "speaker": "operator",
+    "text": "здравствуйте курьерская служба по поводу доставки вашего заказа",
+    "start": 0.39,
+    "end": 4.26
+   },
+   {
+    "speaker": "client",
+    "text": "здравствуйте сколько будет стоить доставка",
+    "start": 4.92,
+    "end": 7.2
+   },
+   {
+    "speaker": "operator",
+    "text": "доставка пятьсот рублей оплатите при получении",
+    "start": 7.8,
+    "end": 10.5
+   },
+   {
+    "speaker": "client",
+    "text": "отлично договорились",
+    "start": 11.28,
+    "end": 12.54
+   }
+  ]
+ }
+}
