@@ -4,13 +4,16 @@
 запись и анализ разговора, карточки договорённостей, задачи, личная и
 менеджерская доски. Одна кодовая база для Android и iOS (`plan.md`, `AGENTS.md`).
 
-Текущий объём — **Этапы 3–5**: мобильная основа (авторизация, контакты, личная
-доска, SQLite-кэш, Repository и синхронизация), **звонки на Dart-уровне** (порт
-`VoiceCallProvider` за DI, `CallController`, экран звонка, зеркало
-стейт-машины, mock-провайдер) и **consent-flow** (экран согласия на первом
+Текущий объём — **Этапы 3–5, 7**: мобильная основа (авторизация, контакты,
+личная доска, SQLite-кэш, Repository и синхронизация), **звонки на Dart-уровне**
+(порт `VoiceCallProvider` за DI, `CallController`, экран звонка, зеркало
+стейт-машины, mock-провайдер), **consent-flow** (экран согласия на первом
 входе, настройки записи/ИИ: toggle, отзыв, удаление данных, политика;
-блокировка записи без согласия; отказ собеседника). Live-карточка (WS) —
-следующий этап (см. `TEAM_PLAN.md`).
+блокировка записи без согласия; отказ собеседника) и **live-карточка
+договорённостей по WebSocket** (транскрипт, карточки договорённостей,
+confirm/reject/edit, ручной ввод без согласия, задача из `confirmed`).
+Нативный VoIP-адаптер, загрузка аудио на `MEDIA_INGEST_URL` и напоминания —
+следующие шаги (см. `TEAM_PLAN.md`).
 
 ## Слои (чистая архитектура)
 
@@ -23,22 +26,29 @@ lib/
     models.dart             UserProfile, AuthSession, TaskItem, Agreement, Call, ContactItem, ConsentRecord
     call.dart               CallSignal/CallState + зеркало стейт-машины звонка
     consent.dart            AppConsent (решение пользователя; кэш + статус синка)
+    ws_event.dart           конверт WS-событий (v1) + TranscriptSegment
     sync_models.dart        SyncChange/Pull/Operation/Result (контракт /sync)
     ports.dart              интерфейсы (AuthApi, SessionStore, BoardApi, SyncApi,
                             CallApi, ConsentApi, ConsentStore, VoiceCallProvider,
-                            ContactsSource, LocalBoardStore, OutboxStore, SyncStateStore)
+                            CallEventsPort, AgreementApi, ContactsSource,
+                            LocalBoardStore, OutboxStore, SyncStateStore)
   application/              контроллеры Riverpod + провайдеры (wiring)
     call_controller.dart    сессия звонка (набор/ответ/отбой/mute, сигналы провайдера,
-                            consent-статусы: notice/result, отказ собеседника)
+                            consent-статусы: notice/result, отказ собеседника),
+                            live-лента WS (транскрипт/договорённости), действия
+                            по договорённостям (confirm/reject/edit/ручной ввод)
     consent_controller.dart решение пользователя (local-first + write-through на сервер)
   infrastructure/           реализации портов
-    api/                    dio-клиент (bearer, refresh-on-401), auth/board/sync/call/consent API
+    api/                    dio-клиент (bearer, refresh-on-401), auth/board/sync/call/consent/agreement API
     db/                     sqflite: схема (v2), session, outbox, sync_state, доска, app_settings
     repositories/           контакты устройства за портом
     sync/sync_engine.dart   цикл синхронизации
     voice/                  mock voice-провайдер (реальный SDK — за тем же портом)
+    ws/ws_call_events.dart  WS-клиент live-ленты (конверт v1 → CallEvent)
   ui/                       экраны и виджеты (никакой бизнес-логики)
-    screens/call_screen.dart     экран звонка (оверлей) + таймер
+    formats.dart                 пользовательские подписи (статусы/владелец/уверенность)
+    screens/call_screen.dart     экран звонка (оверлей) + таймер + live-карточка
+    screens/agreement_edit_dialog.dart правка/ручной ввод договорённости
     screens/dialer_screen.dart   набор номера
 ```
 
@@ -113,11 +123,46 @@ missed), `dial`, `answer`, `decline`, `hangup`, `setMuted`. Платформен
   при старте/ответе звонка; без согласия звонок остаётся обычным (без записи)
   и предлагается ручной ввод договорённостей.
 - **Собеседник**: уведомление (`consent_notice`) проигрывает провайдер
-  (backend, Exolve `file_to_A`), результат (`consent_result`) придёт в звонок
-  событиями WS на Этапе 7; `markConsentResult(granted: false)` переводит звонок
-  в `in_progress` без записи и показывает «Собеседник отказался от записи».
+  (backend, Exolve `file_to_A`). Событие `analysis_started` по WS означает, что
+  согласие получено → клиент доводит звонок до `analyzing`; отказ собеседника
+  отдельным WS-событием **не сигнализируется** (контракт — 4 типа событий),
+  поэтому `markConsentResult(granted: false)` переводит звонок в `in_progress`
+  без записи и показывает «Собеседник отказался от записи».
 - Тексту согласия соответствует версия `consentTextVersion = 'v1'` (на сервере —
   `CONSENT_VERSION`); при изменении текста приложение попросит согласие заново.
+
+## Договорённости и live-карточка (Этап 7)
+
+После ответа и согласия звонок подключается к live-ленте backend по WebSocket —
+`ws(s)://<host>/api/ws/calls/{call_id}` (`Authorization: Bearer <access_token>`,
+пропущенные события доигрываются на подключении). Контракт — версионированный
+конверт v1 (`domain/ws_event.dart`):
+
+```json
+{ "version": 1, "event": "partial_transcript", "call_id": "…", "payload": { … } }
+```
+
+| Событие | Что делает клиент |
+|---|---|
+| `analysis_started` | `markConsentResult(granted: true)` → `markAnalysisStarted()` (статус `analyzing`) |
+| `partial_transcript` | добавляет сегмент (`speaker`, `text`, `start`, `end`) в транскрипт |
+| `agreement_detected` | upsert карточки договорённости (повторный приход по `id` заменяет, не дублирует) |
+| `call_ended` | переводит звонок в `completed`, отключает ленту |
+
+- **Слои**: `WebSocketCallEvents` (`infrastructure/ws/`, за портом `CallEventsPort`)
+  и `HttpAgreementApi` (`infrastructure/api/agreement_api.dart`, за портом
+  `AgreementApi`) внедряются через DI (`callEventsProvider`, `agreementApiProvider`).
+  Виджеты обращаются только к `CallController`.
+- **Карточка** (`ui/screens/call_screen.dart`): последние строки транскрипта и
+  карточки договорённостей с уверенностью, владельцем, сроком и цитатой;
+  действия «Подтвердить» / «Отклонить» / «Изменить». Подтверждение создаёт задачу
+  **только** на сервере (клиент ничего не создаёт сам). Правка — через
+  `AgreementEditDialog` → `PATCH /agreements/{id}`.
+- **Без согласия** запись выключена, лента не подключается, и карточка предлагает
+  «Добавить договорённость вручную» (`POST /calls/{id}/agreements`).
+- **Устойчивость**: лента — best-effort; обрыв/неудача handshake не ломает звонок.
+  Отключается на терминальном статусе, `clear()` и `dispose`.
+- Live-лента подключается только когда есть `call_id` и `recordingEnabled`.
 
 ## Вход
 
@@ -174,6 +219,8 @@ CallKit/PushKit, Telecom/ConnectionService, MTS Exolve SDK; далее APNs/FCM)
 ## Контракт API
 
 Dart-модели зеркалят Pydantic-схемы `services/api/src/app/api/schemas.py`.
-При изменении OpenAPI контракта обновляйте модели и клиентов здесь; формат
-WS-событий (`partial_transcript`, `agreement_detected`, `analysis_started`,
-`call_ended`) ещё согласуется и будет добавлен на Этапе 7.
+При изменении OpenAPI контракта обновляйте модели и клиентов здесь. Формат
+WS-событий (конверт v1: `partial_transcript`, `agreement_detected`,
+`analysis_started`, `call_ended`) реализован в `domain/ws_event.dart` +
+`infrastructure/ws/ws_call_events.dart`; соглашения/задачи — в
+`infrastructure/api/agreement_api.dart`.
