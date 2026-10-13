@@ -29,6 +29,7 @@ from app.ml.asr.ports import ASRPort
 from app.ml.diarization.ports import DiarizationPort
 from app.ml.extraction.ports import ExtractionPort
 from app.ml.pipeline import extract_and_store, transcribe_and_store
+from app.ml.vad.ports import VadPort
 from app.services.events import EventHub
 
 logger = logging.getLogger(__name__)
@@ -69,6 +70,21 @@ def _build_diarizer(settings: Settings) -> DiarizationPort | None:
         logger.warning("pyannote is not installed; channel roles only")
         return None
     return PyannoteDiarizer(settings.hf_token)
+
+
+def _build_vad(settings: Settings) -> VadPort | None:
+    """Silero VAD for trimming silence before ASR; off unless enabled."""
+    if not settings.vad_enabled:
+        return None
+    try:
+        from app.ml.vad.silero import SileroVad
+    except ImportError:  # pragma: no cover - ml extra not installed
+        logger.warning("silero-vad is not installed; running without VAD")
+        return None
+    return SileroVad(
+        min_speech_ms=settings.vad_min_speech_ms,
+        min_silence_ms=settings.vad_min_silence_ms,
+    )
 
 
 def _build_extractor(settings: Settings) -> ExtractionPort | None:
@@ -112,6 +128,7 @@ async def _process_asr(call_id: str) -> bool:
         storage = MinioStorage(settings)
         asr = _build_asr(settings)
         diarizer = _build_diarizer(settings)
+        vad = _build_vad(settings)
         async with factory() as session:
             row = await transcribe_and_store(
                 session,
@@ -121,6 +138,7 @@ async def _process_asr(call_id: str) -> bool:
                 diarizer=diarizer,
                 events=events,
                 settings=settings,
+                vad=vad,
             )
             await session.commit()
             return row is not None

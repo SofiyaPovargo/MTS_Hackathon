@@ -53,6 +53,7 @@ from app.ml.stt.pipeline import (
     decode_phone_pcm,
 )
 from app.ml.stt.schemas import TranscriptSegment
+from app.ml.vad.ports import VadPort
 from app.services.agreement import AgreementService
 from app.services.events import CallEventMessage
 from app.services.task import TaskService
@@ -127,6 +128,7 @@ async def transcribe_and_store(
     diarizer: DiarizationPort | None,
     events: EventsPort,
     settings: Settings,
+    vad: VadPort | None = None,
 ) -> TranscriptRow | None:
     """worker-asr: запись -> транскрипт с ролями, сохранённый в Postgres.
 
@@ -152,7 +154,9 @@ async def transcribe_and_store(
         logger.warning("audio unavailable for call %s: %s", call_id, exc)
         return None
 
-    pipeline = TranscribePipeline(asr, diarizer)
+    pipeline = TranscribePipeline(
+        asr, diarizer, vad, vad_pad_sec=settings.vad_pad_sec
+    )
     transcript = await pipeline.transcribe_audio(str(call_id), audio)
 
     segments = [segment.model_dump(mode="json") for segment in transcript.segments]

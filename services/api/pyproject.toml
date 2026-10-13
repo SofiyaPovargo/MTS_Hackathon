@@ -27,6 +27,7 @@ ml = [
     "numpy>=2.5.4",
     "openai>=3.3.0",
     "pyannote-audio>=4.0.7",
+    "silero-vad>=6.0.0",
     "soundfile>=0.14.0",
     "soxr>=1.1.0",
     "torch>=2.14.1",
@@ -97,6 +98,11 @@ ignore_missing_imports = true
 # with and without them installed (CI never syncs the extra).
 [[tool.mypy.overrides]]
 module = ["pyannote.*", "pyannote.audio.*", "torch.*"]
+ignore_missing_imports = true
+
+# Silero VAD lives in the optional `ml` extra too.
+[[tool.mypy.overrides]]
+module = ["silero_vad.*"]
 ignore_missing_imports = true
 
 [tool.pytest.ini_options]

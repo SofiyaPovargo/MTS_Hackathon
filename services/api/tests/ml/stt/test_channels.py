@@ -44,6 +44,18 @@ class FakeDiarizer:
         return self._segments
 
 
+class FakeVad:
+    """Возвращает заранее заданные речевые интервалы."""
+
+    def __init__(self, regions: list[tuple[float, float]]) -> None:
+        self._regions = regions
+
+    def speech_segments(
+        self, pcm_int16: bytes, *, sample_rate: int
+    ) -> list[tuple[float, float]]:
+        return self._regions
+
+
 def _leg(marker: int) -> bytes:
     """Один int16-сэмпл как псевдо-нога (содержимое для FakeASR не важно)."""
     return np.array([marker], dtype=np.int16).tobytes()
@@ -104,6 +116,23 @@ async def test_mixed_audio_without_diarizer_is_unknown() -> None:
 
     assert transcript.role_source is RoleSource.unknown
     assert transcript.segments[0].speaker == "unknown"
+
+
+@pytest.mark.asyncio
+async def test_vad_trims_edges_and_shifts_timestamps() -> None:
+    asr = FakeASR([[TextPhrase("оператор", 0.0, 1.0)], [TextPhrase("клиент", 0.0, 1.0)]])
+    vad = FakeVad([(10.0, 11.0)])
+    pipeline = TranscribePipeline(asr, vad=vad, vad_pad_sec=0.2)
+
+    leg = np.zeros(160_000, dtype=np.int16).tobytes()  # 20 c @8кГц
+    transcript = await pipeline.transcribe_audio(
+        "c1", CallAudio(operator=leg, client=leg)
+    )
+
+    # Фраза сдвинута на offset обрезки (10.0 - 0.2), аудио в ASR обрезано.
+    assert transcript.segments[0].start == pytest.approx(9.8, abs=0.01)
+    assert asr.calls[0] != leg
+    assert len(asr.calls[0]) < len(leg)
 
 
 def _wav(channels: np.ndarray, sample_rate: int = 8_000) -> bytes:

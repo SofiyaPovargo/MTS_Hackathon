@@ -91,6 +91,13 @@ class Settings(BaseSettings):
     # Data directory for the STT CLI (data/audio, data/transcripts).
     data_dir: Path = Field(default=Path("data"), alias="DATA_DIR")
 
+    # VAD (plan.md §12): trim the dead air at the edges of a leg before ASR.
+    # Internal silence is kept so streaming ASR can still split phrases.
+    vad_enabled: bool = Field(default=False, alias="VAD_ENABLED")
+    vad_pad_sec: float = Field(default=0.2, alias="VAD_PAD_SEC")
+    vad_min_speech_ms: int = Field(default=100, alias="VAD_MIN_SPEECH_MS")
+    vad_min_silence_ms: int = Field(default=100, alias="VAD_MIN_SILENCE_MS")
+
     # --- LLM extraction (optional) ---
     # OpenAI-compatible API for commitment extraction. Local default: Ollama.
     llm_api_key: str = Field(default="", alias="LLM_API_KEY")

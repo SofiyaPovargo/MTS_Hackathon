@@ -35,6 +35,8 @@ from app.ml.stt.schemas import (
     Transcript,
     TranscriptSegment,
 )
+from app.ml.vad.ports import VadPort
+from app.ml.vad.trim import trim_to_speech
 
 PHONE_SAMPLE_RATE = 8_000
 
@@ -165,6 +167,20 @@ def to_segments(phrases: list[TextPhrase], speaker: str) -> list[TranscriptSegme
     ]
 
 
+def shift_phrases(phrases: list[TextPhrase], offset: float) -> list[TextPhrase]:
+    """Сдвинуть таймкоды фраз на ``offset`` (после обрезки тишины по краям)."""
+    if not offset:
+        return phrases
+    return [
+        TextPhrase(
+            text=p.text,
+            start_time=p.start_time + offset,
+            end_time=p.end_time + offset,
+        )
+        for p in phrases
+    ]
+
+
 def merge(
     phrases: list[TextPhrase], diary: list[SpeakerSegment]
 ) -> list[TranscriptSegment]:
@@ -233,22 +249,50 @@ def save_transcript(transcript: Transcript, out_dir: Path) -> Path:
 class TranscribePipeline:
     """Полный пайплайн: аудио -> сегментированный транскрипт с ролями."""
 
-    def __init__(self, asr: ASRPort, diarizer: DiarizationPort | None = None) -> None:
+    def __init__(
+        self,
+        asr: ASRPort,
+        diarizer: DiarizationPort | None = None,
+        vad: VadPort | None = None,
+        *,
+        vad_pad_sec: float = 0.2,
+    ) -> None:
         self._asr = asr
         self._diarizer = diarizer
+        self._vad = vad
+        self._vad_pad_sec = vad_pad_sec
+
+    def _prepare(self, pcm: bytes) -> tuple[bytes, float]:
+        """VAD-обрезка краёв (если VAD задан); вернуть ``(pcm, offset_sec)``."""
+        if self._vad is None:
+            return pcm, 0.0
+        regions = self._vad.speech_segments(pcm, sample_rate=PHONE_SAMPLE_RATE)
+        return trim_to_speech(
+            pcm, regions, sample_rate=PHONE_SAMPLE_RATE, pad_sec=self._vad_pad_sec
+        )
+
+    async def _transcribe_leg(self, pcm: bytes) -> list[TextPhrase]:
+        """Прогнать одну ногу через VAD + ASR; вернуть фразы на исходном таймлайне."""
+        prepared, offset = self._prepare(pcm)
+        phrases = await self._asr.transcribe(prepared)
+        return shift_phrases(phrases, offset)
 
     async def transcribe_audio(
         self, conversation_id: str, audio: CallAudio
     ) -> Transcript:
         """Выбрать путь по каналам: ноги VoIP или смесь + диаризация."""
         if audio.has_legs:
-            operator_phrases = await self._asr.transcribe(cast(bytes, audio.operator))
-            client_phrases = await self._asr.transcribe(cast(bytes, audio.client))
+            operator_phrases = await self._transcribe_leg(cast(bytes, audio.operator))
+            client_phrases = await self._transcribe_leg(cast(bytes, audio.client))
             return channel_transcript(
                 conversation_id, operator_phrases, client_phrases
             )
 
         mixed = audio.mixed or b""
+        # С диаризацией ASR и pyannote делят один таймлайн полного потока,
+        # поэтому VAD-обрезку не применяем; без диаризации — обрезаем края.
+        if self._diarizer is None:
+            return plain_transcript(conversation_id, await self._transcribe_leg(mixed))
         phrases = await self._asr.transcribe(mixed)
         diary = self._diarize(mixed)
         if diary is not None:
