@@ -46,6 +46,7 @@ from app.domain.enums import (
     TaskPriority,
     TaskStatus,
 )
+from app.infrastructure.crypto import EncryptedJSON, EncryptedText
 from app.infrastructure.db.base import (
     Base,
     CreatedAtMixin,
@@ -165,9 +166,12 @@ class Transcript(UUIDPrimaryKeyMixin, CreatedAtMixin, UpdatedAtMixin, Base):
         Uuid, ForeignKey("calls.id", ondelete="CASCADE"), unique=True, nullable=False
     )
     language: Mapped[str] = mapped_column(String(8), nullable=False, default="ru")
-    full_text: Mapped[str | None] = mapped_column(Text, nullable=True)
+    # The transcript is personal data: encrypted at rest (plan §16).
+    full_text: Mapped[str | None] = mapped_column(EncryptedText, nullable=True)
     # Segmented transcript with speaker roles, as produced by the STT pipeline.
-    segments: Mapped[list[dict[str, object]] | None] = mapped_column(JSONB, nullable=True)
+    segments: Mapped[list[dict[str, object]] | None] = mapped_column(
+        EncryptedJSON, nullable=True
+    )
     # Audit field: how speaker roles were obtained (channel | diarization | unknown).
     role_source: Mapped[str] = mapped_column(String(16), nullable=False, default="unknown")
     status: Mapped[str] = mapped_column(String(32), nullable=False, default="processing")
@@ -216,8 +220,11 @@ class AgreementExtraction(UUIDPrimaryKeyMixin, CreatedAtMixin, Base):
     )
     model: Mapped[str] = mapped_column(String(128), nullable=False)
     prompt_version: Mapped[str] = mapped_column(String(64), nullable=False)
-    raw_output: Mapped[dict[str, object]] = mapped_column(JSONB, nullable=False)
-    validated_output: Mapped[dict[str, object] | None] = mapped_column(JSONB, nullable=True)
+    # Raw and validated LLM output carry the transcript quotes: encrypted at rest.
+    raw_output: Mapped[dict[str, object]] = mapped_column(EncryptedJSON, nullable=False)
+    validated_output: Mapped[dict[str, object] | None] = mapped_column(
+        EncryptedJSON, nullable=True
+    )
 
 
 class AgreementEdit(UUIDPrimaryKeyMixin, CreatedAtMixin, Base):

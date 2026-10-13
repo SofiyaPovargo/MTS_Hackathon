@@ -78,6 +78,7 @@ All settings come from the environment (`.env`, see `.env.example`). Key ones:
 | `REDIS_URL`           | `redis://localhost:6379/0` | Redis (queues, cache, event hub)    |
 | `S3_ENDPOINT` etc.    | MinIO dev defaults   | audio storage (used from Stage 6)         |
 | `JWT_SECRET`          | dev-only             | HS256 signing key                         |
+| `DATA_ENCRYPTION_KEY` | dev-only             | Fernet key for transcripts/LLM output at rest |
 | `ACCESS_TOKEN_TTL_SEC`/`REFRESH_TOKEN_TTL_SEC` | 900 / 2592000 | short access + refresh   |
 | `DEV_OTP`             | —                    | fixed OTP accepted only in local/dev      |
 | `CONFIDENCE_THRESHOLD`| 0.8                  | below it an agreement is `requires_review`|
@@ -192,10 +193,11 @@ Misc
 ## Data model
 
 `teams`, `users` (role `user|manager`, `timezone`), `calls`, `call_audio`
-(retention-bounded), `transcripts` (transcript lives here, never duplicated in
-`calls`), `agreements` (owner, quote, audio timestamps, confidence, status),
-`agreement_extractions` (raw + validated LLM output), `agreement_edits`,
-`tasks`, `reminders`, `consents`, `audit_log`, `idempotency_keys`.
+(retention-bounded), `transcripts` (encrypted; the transcript lives here, never
+duplicated in `calls`), `agreements` (owner, quote, audio timestamps,
+confidence, status), `agreement_extractions` (raw + validated LLM output,
+encrypted), `agreement_edits`, `tasks`, `reminders`, `consents`, `audit_log`,
+`idempotency_keys`.
 
 Agreement statuses: `detected`, `requires_review`, `needs_clarification`,
 `confirmed`, `rejected`. Task statuses: `new`, `in_progress`, `done`,
@@ -227,6 +229,12 @@ Agreement statuses: `detected`, `requires_review`, `needs_clarification`,
   user-triggered action on a task whose agreement is `confirmed`
   (`services/schedule.py`); the message endpoint only produces a draft
   (`sent: false`), and the `.ics` download touches no external system.
+- **Personal data at rest.** Audio objects use SSE-AES256 and a retention
+  expiry (`AUDIO_RETENTION_DAYS`); transcript text/segments and raw LLM output
+  are encrypted column-by-column with Fernet under `DATA_ENCRYPTION_KEY`
+  (`infrastructure/crypto.py`, transparent ORM types). Logs never carry raw
+  transcripts or prompts — the one LLM preview is passed through
+  `infrastructure/redaction.py` (masks phones, e-mails, long numbers).
 
 ## Consent flow on `call.answered`
 

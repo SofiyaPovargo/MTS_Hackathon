@@ -40,6 +40,12 @@ class Settings(BaseSettings):
     max_audio_upload_mb: int = Field(default=64, alias="MAX_AUDIO_UPLOAD_MB")
 
     jwt_secret: str = Field(default="dev-only-change-me", alias="JWT_SECRET")
+    # Field-level encryption of transcripts and LLM output (plan §16). Change it
+    # before the first run and keep it secret: data written with one key cannot be
+    # read with another. A Fernet key or any passphrase works.
+    data_encryption_key: str = Field(
+        default="dev-only-change-me", alias="DATA_ENCRYPTION_KEY"
+    )
     jwt_algorithm: str = "HS256"
     access_token_ttl_sec: int = Field(default=900, alias="ACCESS_TOKEN_TTL_SEC")
     refresh_token_ttl_sec: int = Field(default=2_592_000, alias="REFRESH_TOKEN_TTL_SEC")

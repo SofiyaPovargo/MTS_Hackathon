@@ -6,6 +6,7 @@ Agreement-сервиса). LLM-вывод валидируется rule-пасо
 
 from __future__ import annotations
 
+import logging
 from typing import Any, cast
 
 import instructor
@@ -13,7 +14,10 @@ import openai
 from pydantic import BaseModel
 
 from app.domain.commitment import Commitment
+from app.infrastructure.redaction import redact_preview
 from app.ml.extraction.context import ConversationContext
+
+logger = logging.getLogger(__name__)
 
 # Версия промпта для аудита (хранится в agreement_extractions.prompt_version).
 PROMPT_VERSION = "v1"
@@ -101,12 +105,18 @@ class InstructorLLMExtractor:
         ]
 
     async def extract(self, context: ConversationContext) -> list[Commitment]:
+        messages = self._messages(context)
+        # The prompt carries the transcript, which is personal data: only a
+        # redacted preview may be logged (AGENTS «ML and data rules»).
+        if logger.isEnabledFor(logging.DEBUG):
+            logger.debug("llm user prompt (redacted): %s", redact_preview(messages[-1]["content"]))
         result = await self._client.chat.completions.create(
             model=self.model,
-            messages=self._messages(context),
+            messages=messages,
             response_model=ExtractionResult,
             temperature=0,
             seed=0,
         )
         response = cast(ExtractionResult, result)
+        logger.debug("llm response: %d commitment(s)", len(response.commitments))
         return response.commitments

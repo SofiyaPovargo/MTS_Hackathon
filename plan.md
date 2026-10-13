@@ -1003,6 +1003,13 @@ access‑токен в заголовке `Authorization: Bearer <token>` (мо�
 - JWT access token с коротким сроком жизни и refresh token.
 - Проверка прав на сервере, а не только в UI.
 
+Реализация шифрования и логов (трек C): аудио — SSE‑AES256 в объектном
+хранилище; `transcripts.full_text`/`segments` и `raw_output`/`validated_output`
+в `agreement_extractions` шифруются на уровне ORM (Fernet, ключ
+`DATA_ENCRYPTION_KEY`, прозрачные типы `EncryptedText`/`EncryptedJSON`).
+В логи не попадают сырые транскрипты и промпты: единственный LLM‑превью
+проходит через редактор (`phone`/`email`/длинные числа).
+
 ## 17. План работ
 
 ### Этап 1. Подготовка

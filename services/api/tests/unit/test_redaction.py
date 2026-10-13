@@ -1,21 +1,27 @@
-"""Redaction of PII for logs."""
+"""Log redaction of personal data (AGENTS «ML and data rules»)."""
 
 from __future__ import annotations
 
-from app.infrastructure.redaction import redact
+from app.infrastructure.redaction import redact, redact_preview
 
 
-def test_masks_email() -> None:
-    assert redact("пишите на ivan.petrov@example.com") == "пишите на [email]"
+def test_redacts_phone_numbers() -> None:
+    assert redact("позвони на +7 (999) 123-45-67 завтра") == "позвони на [phone] завтра"
+    assert redact("номер 89991234567") == "номер [phone]"
 
 
-def test_masks_phone() -> None:
-    assert "[phone]" in redact("звоните +7 916 123-45-67 завтра")
+def test_redacts_emails_and_long_numbers() -> None:
+    assert redact("пиши на ivan.petrov@example.com") == "пиши на [email]"
+    assert redact("счёт 40817810099910004312") == "счёт [number]"
 
 
-def test_masks_long_number() -> None:
-    assert "[number]" in redact("карта 4276123456789012")
+def test_leaves_ordinary_text_untouched() -> None:
+    text = "обсудили поставку и сроки до пятницы"
+    assert redact(text) == text
 
 
-def test_keeps_plain_text() -> None:
-    assert redact("пришлю договор до пятницы") == "пришлю договор до пятницы"
+def test_preview_is_redacted_and_capped() -> None:
+    preview = redact_preview("тел +79990001122 " + "x" * 50, limit=20)
+    assert preview.startswith("тел [phone]")
+    assert preview.endswith("…")
+    assert len(preview) == 21
