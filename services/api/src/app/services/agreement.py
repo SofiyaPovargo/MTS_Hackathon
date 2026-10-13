@@ -287,6 +287,7 @@ class AgreementService:
         if forbidden:
             raise ValidationFailed(f"fields are not editable: {', '.join(sorted(forbidden))}")
 
+        previous_due = (agreement.due_date, agreement.due_time)
         changed: dict[str, Any] = {}
         for field in EDITABLE_FIELDS & provided:
             new_value = _coerce_change(field, changes[field])
@@ -311,6 +312,11 @@ class AgreementService:
                 action="agreement.edited",
                 actor_user_id=user.id,
                 payload={"fields": sorted(changed)},
+            )
+            # A confirmed agreement stays editable (§12–14) and its task follows,
+            # so the board/reminders never show a stale value.
+            await self._tasks.sync_from_agreement(
+                agreement, actor=user, previous_due=previous_due
             )
         await self._session.flush()
         return agreement
@@ -337,18 +343,24 @@ class AgreementService:
         return agreement
 
     async def reject(self, user: User, agreement: Agreement) -> Agreement:
-        if agreement.status is AgreementStatus.confirmed:
-            raise ValidationFailed("confirmed agreements cannot be rejected; cancel the task")
+        """Отклонить договорённость — в том числе уже подтверждённую (§12–14).
+
+        Подтверждение не «замораживает» карточку: если договорённость больше не
+        актуальна, пользователь её отклоняет, а созданная из неё задача
+        отменяется.
+        """
         if agreement.status is AgreementStatus.rejected:
             return agreement
         agreement.status = AgreementStatus.rejected
         agreement.version += 1
+        task = await self._tasks.cancel_for_agreement(agreement, actor=user)
         await repositories.record_audit(
             self._session,
             entity_type="agreement",
             entity_id=agreement.id,
             action="agreement.rejected",
             actor_user_id=user.id,
+            payload={"task_id": str(task.id) if task is not None else None},
         )
         await self._session.flush()
         return agreement

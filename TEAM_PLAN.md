@@ -47,6 +47,7 @@ pytest 135 passed. **Трек C (Mav): добавлен приём аудио о
 - [ ] **Exolve `crr`** → скачать запись (Call Record API) → MinIO → авто-постановка ASR
 - [x] **Exolve webhooks** (call-control + statistics `b/o/s/h/e/crr`) end-to-end: `POST /api/voice/exolve/control` (маршрут по `EXOLVE_SIP_ROUTES`, `Call`, `file_to_A`, `event_URL`) + `POST /api/voice/exolve/events` (`b/o/s/e` → `CallSessionService`); `crr` — за следующим пунктом
 - [x] **Consent-уведомление** в бою (`file_to_A`, режим `notice`) + запись в `consents`: notice в ответе call-control, ветка согласия — по событию `s`
+- [x] **Правка подтверждённых договорённостей** (`plan.md` §12–14): `PATCH /agreements/{id}` работает в любом статусе (в т.ч. `confirmed`) и переносится на связанную задачу (название, срок, ответственный) + сдвиг напоминаний; `POST /reject` подтверждённой отменяет задачу; каждое изменение → `version` + `audit_log`; повторное извлечение не создаёт дублей
 - [ ] **Приватность**: шифрование аудио/транскриптов, redaction логов LLM
 - [ ] (опц.) реальные адаптеры календаря/напоминаний; (опц.) деплой ближе к демо
 
