@@ -598,6 +598,25 @@ Voice Provider
 | Пользователь A | Только у B | PSTN → номер компании → App | Да, у B |
 | Любой | Ни у кого | Обычный сотовый звонок | Нет |
 
+### 11.1. Voice‑провайдер: МТС Exolve (решение Этапа 1)
+
+Выбран **МТС Exolve**. Закрывает всё, что требует `VoiceProviderPort`:
+
+| Возможность | API Exolve |
+|---|---|
+| Входящие, сценарий по URL (call control) | Numbering API + переадресация входящих на URL |
+| Исходящие на обычные номера | Voice API / Callback API |
+| Запись разговора | Call Record API (`SetCallRecordState`, `Download`) |
+| События звонка (webhook) | Statistics API: Inbound/Outbound Call Events |
+| Аудио‑уведомление собеседнику | Media API (загрузка аудио) + инструкция воспроизведения |
+| DTMF (согласие 1/2) | сбор DTMF / Mobile SDK |
+| Мобильный клиент | Mobile SDK (Android, iOS, Flutter, React Native) |
+| Транскрибация (альтернатива своему ASR) | Call Transcribation / Speech Analytics |
+
+Интеграция — адаптер за `VoiceProviderPort`; ML‑пайплайн и мобильный UI не
+меняются. Ключи/номера — только из `.env` (`EXOLVE_*`), в репозиторий не
+коммитятся. Реализация идёт после Этапов 4–5, в треке C.
+
 ## 12. ИИ‑пайплайн
 
 ```text
@@ -819,7 +838,7 @@ access‑токен в заголовке `Authorization: Bearer <token>` (мо�
 - Зафиксировать MVP‑сценарий.
 - Определить роли пользователя и менеджера.
 - Выбрать мобильный стек: React Native/Expo или Flutter.
-- Выбрать Voice‑провайдера.
+- Выбрать Voice‑провайдера — **МТС Exolve** (см. §11.1).
 - Создать репозиторий и структуру проекта.
 
 ### Этап 2. Серверная основа
