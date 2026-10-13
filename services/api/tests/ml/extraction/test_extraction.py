@@ -73,35 +73,35 @@ def _commitment(
 
 def test_quote_found_in_transcript() -> None:
     context = _context(TRANSCRIPT)
-    validator = CommitmentValidator(context.transcript)
+    validator = CommitmentValidator(context.transcript, today=context.conversation_date)
     assert validator.quote_found(_commitment())
 
 
 def test_quote_not_found_flags_contradictory() -> None:
     context = _context(TRANSCRIPT)
     commitment = _commitment(source_quote="Пришлите счёт завтра")
-    flags = CommitmentValidator(context.transcript).flags(commitment)
+    flags = CommitmentValidator(context.transcript, today=context.conversation_date).flags(commitment)
     assert flags.contradictory_quote
 
 
 def test_bounds_out_of_call_flags_contradictory() -> None:
     context = _context(TRANSCRIPT)
     commitment = _commitment(audio_start=40.0, audio_end=50.0)
-    flags = CommitmentValidator(context.transcript).flags(commitment)
+    flags = CommitmentValidator(context.transcript, today=context.conversation_date).flags(commitment)
     assert flags.contradictory_quote
 
 
 def test_missing_due_date_flagged_for_deadline() -> None:
     context = _context(TRANSCRIPT)
     commitment = _commitment(type="deadline")
-    flags = CommitmentValidator(context.transcript).flags(commitment)
+    flags = CommitmentValidator(context.transcript, today=context.conversation_date).flags(commitment)
     assert flags.missing_due_date
 
 
 def test_unknown_owner_flagged() -> None:
     context = _context(TRANSCRIPT)
     commitment = _commitment(owner=Owner.unknown)
-    flags = CommitmentValidator(context.transcript).flags(commitment)
+    flags = CommitmentValidator(context.transcript, today=context.conversation_date).flags(commitment)
     assert flags.unknown_owner
 
 
@@ -122,6 +122,40 @@ def test_validate_keeps_confident_detected() -> None:
 
 def test_validate_empty_returns_empty() -> None:
     assert validate(_context(TRANSCRIPT), []) == []
+
+
+def test_validate_overrides_llm_date_with_deterministic() -> None:
+    # conversation_date = 2026-10-05 (понедельник); «до пятницы» — 09.10, не 13.10.
+    context = _context(TRANSCRIPT)
+    commitment = _commitment(due_date=date(2026, 10, 13))  # галлюцинация LLM
+    validated = validate(context, [commitment])
+    assert validated[0].due_date == date(2026, 10, 9)
+
+
+def test_validate_vague_deadline_needs_clarification() -> None:
+    context = _context([("operator", "Сдадим документы к концу месяца.", 0.0, 3.0)])
+    commitment = _commitment(
+        type="deadline",
+        due_date=date(2026, 10, 31),
+        source_quote="Сдадим документы к концу месяца.",
+        audio_start=0.0,
+        audio_end=3.0,
+    )
+    validated = validate(context, [commitment])
+    assert validated[0].ambiguity.vague_deadline
+    assert validated[0].status is AgreementStatus.needs_clarification
+
+
+def test_concrete_date_clears_llm_vague_flag() -> None:
+    from app.domain.rules import AmbiguityFlags
+
+    context = _context(TRANSCRIPT)  # «до пятницы» резолвится в конкретную дату
+    commitment = _commitment(due_date=date(2026, 10, 13))
+    commitment.ambiguity = AmbiguityFlags(vague_deadline=True)
+    validated = validate(context, [commitment])
+    assert validated[0].due_date == date(2026, 10, 9)
+    assert not validated[0].ambiguity.vague_deadline
+    assert validated[0].status is AgreementStatus.detected
 
 
 # --- Реалистичные кейсы из скилла (на уровне валидации фейковых LLM-выводов)

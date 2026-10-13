@@ -76,6 +76,21 @@ services:
       migrate:
         condition: service_completed_successfully
 
+  # Self-hosted LLM for commitment extraction (OpenAI-compatible). The host
+  # model cache is mounted so an already-pulled model (e.g. qwen2.5:7b) is
+  # visible inside the container without re-downloading. Reachable by workers
+  # by service name (``http://ollama:11434/v1``), never via localhost.
+  ollama:
+    image: ollama/ollama:latest
+    restart: unless-stopped
+    volumes:
+      - ${HOME}/.ollama:/root/.ollama
+    healthcheck:
+      test: ["CMD-SHELL", "ollama list >/dev/null 2>&1 || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+
   worker-asr:
     build:
       context: services/api
@@ -99,11 +114,17 @@ services:
     environment:
       DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-app}:${POSTGRES_PASSWORD:-app}@postgres:5432/${POSTGRES_DB:-agreements}
       REDIS_URL: redis://redis:6379/0
+      # Self-hosted LLM (Ollama) by service name, not localhost.
+      LLM_BASE_URL: ${LLM_BASE_URL:-http://ollama:11434/v1}
+      LLM_MODEL: ${LLM_MODEL:-qwen2.5:7b}
+      LLM_API_KEY: ${LLM_API_KEY:-ollama}
     command: ["uv", "run", "celery", "-A", "app.worker", "worker", "-Q", "ai", "-l", "info"]
     depends_on:
       postgres:
         condition: service_healthy
       redis:
+        condition: service_healthy
+      ollama:
         condition: service_healthy
 
   worker-notifications:
