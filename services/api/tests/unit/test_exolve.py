@@ -71,6 +71,26 @@ def test_parse_non_lifecycle_keeps_raw(kind: str) -> None:
     assert event.known is (kind != "z")
 
 
+def test_parse_crr_exposes_the_record_id() -> None:
+    event = parse_call_event(
+        {
+            "type": "crr",
+            "call_sid": "cs-3",
+            "client_id": "11111111-1111-1111-1111-111111111111",
+            "uid": 7135909209505402880,
+            "record_duration": 21,
+            "path": "https://api.exolve.ru/statistics/download/7135909209505402880",
+        }
+    )
+    assert event.known is True
+    assert event.event is None
+    assert event.record_uid == "7135909209505402880"
+
+
+def test_parse_crr_without_uid_has_no_record_id() -> None:
+    assert parse_call_event({"type": "crr", "call_sid": "cs-4"}).record_uid is None
+
+
 def test_parse_sip_routes_handles_multiple_entries() -> None:
     routes = parse_sip_routes(
         "1001=+79000000002:sip:anna@pbx, 1002=+79000000003:sip:boris@pbx"
@@ -132,17 +152,52 @@ async def test_record_client_get_info_and_download() -> None:
         if request.url.path == "/statistics/call-record/v1/GetInfo":
             return httpx.Response(200, json={"records": [{"uid": "42", "record_path": "http://x/42"}]})
         assert request.url.path == "/statistics/download/42"
-        return httpx.Response(200, content=b"AUDIO")
+        return httpx.Response(200, content=b"AUDIO", headers={"content-type": "audio/mpeg"})
 
     client = _record_client(handler)
     try:
         records = await client.get_info(["42"])
-        audio = await client.download_record("42")
+        recording = await client.fetch_recording("42")
     finally:
         await client.aclose()
 
     assert records[0]["uid"] == "42"
-    assert audio == b"AUDIO"
+    assert recording.data == b"AUDIO"
+    assert recording.content_type == "audio/mpeg"
+
+
+async def test_fetch_recording_builds_the_url_from_the_configured_base() -> None:
+    """The record id comes from the webhook, but the host never does (no SSRF)."""
+    seen: dict[str, str] = {}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        seen["url"] = str(request.url)
+        return httpx.Response(200, content=b"AUDIO")
+
+    client = ExolveCallRecordClient(
+        base_url="https://api.exolve.test",
+        api_key="test-key",
+        transport=httpx.MockTransport(handler),
+    )
+    try:
+        await client.fetch_recording("42")
+    finally:
+        await client.aclose()
+
+    assert seen["url"] == "https://api.exolve.test/statistics/download/42"
+
+
+async def test_fetch_recording_falls_back_to_mp3_without_a_content_type() -> None:
+    def handler(_request: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, content=b"AUDIO")
+
+    client = _record_client(handler)
+    try:
+        recording = await client.fetch_recording("42")
+    finally:
+        await client.aclose()
+
+    assert recording.content_type == "audio/mpeg"
 
 
 async def test_record_client_raises_on_provider_error() -> None:

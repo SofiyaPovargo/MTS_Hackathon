@@ -14,16 +14,16 @@ Layered per `AGENTS.md`:
 src/app/
   api/            HTTP routes, WebSocket endpoint, schemas (Pydantic v2), dependencies
   domain/         entities, enums, state machine, date/commitment rules (no IO)
-  services/       auth, call session, consent, agreement, task, schedule, sync, manager, events
+  services/       auth, call session, consent, agreement, task, schedule, sync, manager, data deletion, events
   infrastructure/ SQLAlchemy models/repositories, Redis cache, JWT, S3 storage
   integrations/   external ports: VoiceProviderPort (mock + Exolve adapter), calendar/reminders/messaging
   ml/             research layer: ASR (T-one client), diarization (pyannote), STT pipeline
   migrations/     Alembic migrations
-  worker.py       Celery entrypoint (queues: asr, ai, notifications)
+  worker.py       Celery entrypoint (queues: asr, ai, asr-live, ai-live, notifications)
   cli.py          `python -m app.cli seed` — demo team + users
 tests/
   unit/           date resolution, commitment rules, call state machine
-  integration/    auth, access, consent flow, agreements/tasks, schedule, sync, manager, WebSocket events
+  integration/    auth, access, consent flow, agreements/tasks (incl. edits), audio ingest/resume, schedule, sync, manager, WebSocket events, Exolve webhooks, provider recording, encryption, privacy
   ml/             T-one ASR client protocol, STT pipeline (roles, resample)
 ```
 
@@ -63,6 +63,9 @@ Rules enforced by the compose file (see `AGENTS.md`):
 - Data lives only in named volumes (`postgres_data`, `redis_data`, `minio_data`).
 - Dev-only published ports (`8000`, `5432`, `6379`, `9000`, `9001`) live in
   `docker-compose.override.yml`, not in the production compose file.
+
+Production runs the base file plus `docker-compose.prod.yml` (real Let's
+Encrypt certificates, restart policies, dev ports closed); see `docs/deploy.md`.
 - `api` and workers share one image with different start commands; the ML-heavy
   extras go in the optional `ml` dependency group so the API image stays light.
 - The research `asr` service (T-one streaming ASR) is optional and starts only
@@ -78,6 +81,7 @@ All settings come from the environment (`.env`, see `.env.example`). Key ones:
 | `REDIS_URL`           | `redis://localhost:6379/0` | Redis (queues, cache, event hub)    |
 | `S3_ENDPOINT` etc.    | MinIO dev defaults   | audio storage (used from Stage 6)         |
 | `JWT_SECRET`          | dev-only             | HS256 signing key                         |
+| `DATA_ENCRYPTION_KEY` | dev-only             | Fernet key for transcripts/LLM output at rest |
 | `ACCESS_TOKEN_TTL_SEC`/`REFRESH_TOKEN_TTL_SEC` | 900 / 2592000 | short access + refresh   |
 | `DEV_OTP`             | —                    | fixed OTP accepted only in local/dev      |
 | `CONFIDENCE_THRESHOLD`| 0.8                  | below it an agreement is `requires_review`|
@@ -128,7 +132,7 @@ Calls (voice provider integration lives behind `VoiceProviderPort`)
 | GET    | `/calls`              | my calls                           |
 | GET    | `/calls/{id}`         | call detail (owner-only)           |
 | POST   | `/calls/{id}/events`  | provider webhook, signed by `VOICE_WEBHOOK_SECRET` |
-| POST   | `/calls/{id}/audio`   | client uploads the recorded audio (`audio/*` body; optional `?leg=operator|client`, `?duration_sec`). 202; queues ASR once complete. 409 if the call was not recorded, 413 oversized, 422 bad type, 403 foreign call |
+| POST   | `/calls/{id}/audio`   | client uploads the recorded audio (`audio/*` body; optional `?leg=operator|client`, `?duration_sec`, `?restart`). **Resumable**: with `Content-Range: bytes <start>-<end>/<total>` the body is one chunk, stored immediately, and the response `offset` says where to resume after a network drop (a retried chunk is idempotent; a gap → 409 with `expected_offset`). 202; queues ASR once complete. 409 if the call was not recorded, 413 oversized, 422 bad type/bad range, 403 foreign call |
 | POST   | `/calls/{id}/analyze` | queue ASR + extraction for a recorded call (202, returns `{call_id,status}`) |
 
 Voice provider webhooks (МТС Exolve, signed by `VOICE_WEBHOOK_SECRET` as an
@@ -138,7 +142,7 @@ headers)
 | method | path                    | notes                                |
 | ------ | ----------------------- | ------------------------------------ |
 | POST   | `/voice/exolve/control` | inbound call control: route the call to the app user (`EXOLVE_SIP_ROUTES`), play the consent notice (`file_to_A`), point events at our `event_URL`. JSON-RPC body; unknown `sip_id` → `error`; idempotent per `call_sid` |
-| POST   | `/voice/exolve/events`  | progress notification `b/o/s/e/h/crr`: `b/o/s/e` drive the call lifecycle, others are acknowledged. Call resolved by `client_id` or `call_sid` |
+| POST   | `/voice/exolve/events`  | progress notification `b/o/s/e/h/crr`: `b/o/s/e` drive the call lifecycle, `crr` remembers the record id and queues the download, the rest are acknowledged. Call resolved by `client_id` or `call_sid` |
 
 Agreements
 
@@ -192,10 +196,11 @@ Misc
 ## Data model
 
 `teams`, `users` (role `user|manager`, `timezone`), `calls`, `call_audio`
-(retention-bounded), `transcripts` (transcript lives here, never duplicated in
-`calls`), `agreements` (owner, quote, audio timestamps, confidence, status),
-`agreement_extractions` (raw + validated LLM output), `agreement_edits`,
-`tasks`, `reminders`, `consents`, `audit_log`, `idempotency_keys`.
+(retention-bounded), `transcripts` (encrypted; the transcript lives here, never
+duplicated in `calls`), `agreements` (owner, quote, audio timestamps,
+confidence, status), `agreement_extractions` (raw + validated LLM output,
+encrypted), `agreement_edits`, `tasks`, `reminders`, `consents`, `audit_log`,
+`idempotency_keys`.
 
 Agreement statuses: `detected`, `requires_review`, `needs_clarification`,
 `confirmed`, `rejected`. Task statuses: `new`, `in_progress`, `done`,
@@ -227,6 +232,15 @@ Agreement statuses: `detected`, `requires_review`, `needs_clarification`,
   user-triggered action on a task whose agreement is `confirmed`
   (`services/schedule.py`); the message endpoint only produces a draft
   (`sent: false`), and the `.ics` download touches no external system.
+- **Personal data at rest.** Audio objects use SSE-AES256 and a retention
+  expiry (`AUDIO_RETENTION_DAYS`); transcript text/segments and raw LLM output
+  are encrypted column-by-column with Fernet under `DATA_ENCRYPTION_KEY`
+  (`infrastructure/crypto.py`, transparent ORM types). Logs never carry raw
+  transcripts or prompts — the one LLM preview is passed through
+  `infrastructure/redaction.py` (masks phones, e-mails, long numbers). A daily
+  `beat` job (`purge_expired_audio`) and the on-request `delete_user_data`
+  (`services/data_deletion.py`) remove audio objects — including the legs of a
+  split call and the chunks of an unfinished resumable upload.
 
 ## Consent flow on `call.answered`
 
@@ -260,9 +274,27 @@ Exolve at `POST /voice/exolve/events`. The body echoes our call id as
 `client_id`, which — together with `Call.external_id` — correlates every later
 notification back to the call. `POST /voice/exolve/events` maps `b/o/s/e` to the
 *same* `CallSessionService` the mock provider uses, so the
-`answered`+consent recording gate applies unchanged; `h`, `crr` and unknown
-types are acknowledged without a transition. Both endpoints are signed with
+`answered`+consent recording gate applies unchanged; `h` and unknown types are
+acknowledged without a transition. Both endpoints are signed with
 `VOICE_WEBHOOK_SECRET`; the callback base is `PUBLIC_BASE_URL`.
+
+**Provider recording download** (`services/provider_recording.py`). Exolve
+records at the SIP-resource level and announces the finished file with `crr`
+(`uid` = the Call Record id). The webhook only parks that id on the
+`call_audio` row (`provider://exolve/<uid>`) and queues `download_recording`;
+the worker then pulls `GET /statistics/download/{uid}` and stores the object in
+MinIO before handing off to ASR. Two rules hold:
+
+- the download happens only for a call our own flow recorded
+  (`recording_started_at`, i.e. `answered` + consent) — a `crr` for a
+  non-consented call is audited as `recording.rejected` and its audio is never
+  fetched or stored;
+- it is idempotent: audio already in storage is left alone, so a client upload
+  wins over the provider copy and a re-delivered `crr` does not re-download.
+
+The download URL is built from `EXOLVE_API_BASE_URL` + the record id, never from
+the notification's `path` field, so a forged callback cannot redirect the fetch.
+Without `EXOLVE_API_KEY` the worker logs and skips the job.
 
 **Client audio ingest** (`services/audio_ingest.py`). The app POSTs the raw
 recording (`Content-Type: audio/*`) to `POST /calls/{id}/audio`; the body is the
@@ -272,6 +304,16 @@ row and queues ASR once the recording is complete (mixed, or both legs).
 Re-uploading a role replaces the object and deletes the superseded one. The
 endpoint refuses any call without `recording_started_at` — the storage-side half
 of the `answered`+consent gate — and is owner-only.
+
+The upload is **resumable**, because a dropped connection must not lose what was
+already recorded: with `Content-Range: bytes <start>-<end>/<total>` the body is
+one chunk and is written to storage immediately, so the `offset` returned is
+durable. A client that reconnects (Wi-Fi hand-off, 4G dead spot, weak signal)
+resumes from that offset; re-sending an already-stored chunk is idempotent
+(accepted, not stored twice); a gap or partial overlap is `409` with
+`expected_offset`. Chunks are assembled into the final object once the last one
+arrives and then deleted; `?restart=true` abandons an in-flight upload. Without
+`Content-Range` the upload is a single whole-object request (replacement).
 
 ## ML pipeline (research, Stage 6 groundwork)
 
@@ -313,15 +355,19 @@ through pyannote; the first speaker becomes `operator`, the second `client`.
 
 **Production pipeline** (`pipeline.py`, run by the workers):
 
-1. `worker-asr` (`process_asr`) — load the recording from MinIO/S3, transcribe,
+1. `worker-asr` (`download_recording`) — when Exolve announces a finished
+   recording (`crr`), fetch it through the Call Record API and store it in
+   MinIO, then enqueue `process_asr`. Skipped when the audio is already in
+   storage or the call was not recorded with consent.
+2. `worker-asr` (`process_asr`) — load the recording from MinIO/S3, transcribe,
    persist the segmented transcript into `transcripts` (1:1 with the call),
    publish `partial_transcript` events, then enqueue `worker-ai`.
-2. `worker-ai` (`run_llm_extraction`) — LLM extraction + rule-based validation,
+3. `worker-ai` (`run_llm_extraction`) — LLM extraction + rule-based validation,
    create proposed `agreements` (raw/validated output kept apart in
    `agreement_extractions`), publish `agreement_detected`.
 
-Both steps are idempotent by `call_id`: re-processing reuses the stored
-transcript / agreements instead of recomputing. The client upload
+Both ASR and extraction are idempotent by `call_id`: re-processing reuses the
+stored transcript / agreements instead of recomputing. The client upload
 (`POST /calls/{id}/audio`) queues `worker-asr` automatically once the recording
 is complete; `POST /calls/{id}/analyze` re-queues explicitly. The LLM part is off
 unless `LLM_BASE_URL`/`LLM_MODEL` are set (`llm_enabled`).
@@ -431,10 +477,10 @@ Event types are emitted by the ML workers (Stage 6, Track B), except
 
 ## Workers
 
-Celery, one image, separate queues (`worker-asr`, `worker-ai`,
-`worker-notifications`). The tasks are explicit placeholders that keep the
-queues healthy; the ML pipeline wiring is Stage 6. `data-deletion` jobs are
-enqueued from `POST /me/data/delete`.
+Celery, one image, separate queues (`worker-asr`, `worker-ai`, `worker-asr-live`,
+`worker-ai-live`, `worker-notifications`). `beat` schedules the daily audio
+retention purge (`purge_expired_audio`); `POST /me/data/delete` enqueues
+`request_data_deletion`. Both run against `services/data_deletion.py`.
 
 ## Tests
 

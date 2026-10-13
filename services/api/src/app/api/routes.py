@@ -10,7 +10,7 @@ from __future__ import annotations
 
 import uuid
 
-from fastapi import APIRouter, Depends, Query, Request, Response
+from fastapi import APIRouter, Depends, Header, Query, Request, Response
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api import schemas
@@ -37,7 +37,7 @@ from app.domain.errors import (
 from app.infrastructure.db import repositories
 from app.infrastructure.db.models import User
 from app.services.agreement import AgreementService
-from app.services.audio_ingest import AudioIngestService, AudioUpload
+from app.services.audio_ingest import AudioIngestService, AudioUpload, parse_content_range
 from app.services.auth import AuthService
 from app.services.call_session import CallSessionService, get_call_or_404
 from app.services.consent import ConsentService
@@ -245,6 +245,14 @@ async def upload_call_audio(
     request: Request,
     leg: str | None = Query(default=None, pattern="^(operator|client)$"),
     duration_sec: int | None = Query(default=None, ge=0),
+    restart: bool = Query(
+        default=False, description="Discard an in-flight chunked upload for this role."
+    ),
+    content_range: str | None = Header(
+        default=None,
+        alias="Content-Range",
+        description="Resumable upload: 'bytes <start>-<end>/<total>' for one chunk.",
+    ),
     user: User = Depends(get_current_user),
     session: AsyncSession = Depends(get_session),
 ) -> schemas.CallAudioAccepted:
@@ -255,6 +263,11 @@ async def upload_call_audio(
     or ``?leg=client`` it is one per-leg track — upload both for channel
     separation. Refused unless the call was recorded (``answered`` + consent);
     an oversized body is 413, an unsupported type is 422, a foreign call is 403.
+
+    A dropped connection must not lose recorded audio, so the upload is
+    resumable: with ``Content-Range: bytes <start>-<end>/<total>`` the body is
+    one chunk, stored immediately, and the response's ``offset`` says where to
+    continue. Re-sending an already-stored chunk is idempotent.
     """
     call = await get_call_or_404(session, call_id)
     await _require_call_owner(user, call.user_id)
@@ -267,21 +280,39 @@ async def upload_call_audio(
     )
     service.check_declared_size(request.headers.get("content-length"))
     body = await request.body()
-    audio, queued = await service.ingest(
-        user,
-        call,
-        upload=AudioUpload(body, request.headers.get("content-type")),
-        role=leg,
-        duration_sec=duration_sec,
-    )
+    upload = AudioUpload(body, request.headers.get("content-type"))
+
+    if content_range is None:
+        audio, queued = await service.ingest(
+            user, call, upload=upload, role=leg, duration_sec=duration_sec
+        )
+        offset, complete = len(body), True
+    else:
+        start, end, total = parse_content_range(content_range)
+        if end - start + 1 != len(body):
+            raise ValidationFailed("Content-Range does not match the body length")
+        audio, queued, offset = await service.ingest_chunk(
+            user,
+            call,
+            upload=upload,
+            role=leg,
+            start=start,
+            total=total,
+            duration_sec=duration_sec,
+            restart=restart,
+        )
+        complete = offset >= total
+
     await session.commit()
     return schemas.CallAudioAccepted(
         call_id=call.id,
         role=leg,
         content_type=audio.content_type,
-        bytes_stored=len(body),
+        bytes_stored=offset,
         legs_present=sorted((audio.channel_urls or {}).keys()),
         analysis_queued=queued,
+        offset=offset,
+        complete=complete,
     )
 
 

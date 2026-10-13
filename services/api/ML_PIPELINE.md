@@ -229,13 +229,16 @@ Live-аудио приходит от клиента на `WS /api/ws/calls/{id}
   `request_data_deletion`) удаляются аудио-объекты из MinIO и все звонки
   пользователя (каскадно — транскрипты, договорённости, raw/validated/edits) и
   задачи. `audit_log` фиксирует `data.deleted`.
-- **Retention** — задача `purge_expired_audio` (Celery-beat, ежедневно) удаляет
-  аудио старше `AUDIO_RETENTION_DAYS` (`call_audio.expires_at`). Транскрипт
-  сохраняется — лимит срока только на аудио.
-- **Redaction** — `infrastructure/redaction.py::redact`; промпты/ответы LLM по
-  умолчанию не логируются, а при отладке проходят через редакцию PII.
-- **Аудио at-rest** — объекты в MinIO с SSE-AES256; транскрипты в БД (шифрование
-  на уровне БД — не реализовано, в бэклоге).
+- **Retention** — задача `purge_expired_audio` (Celery-beat, ежедневно, батчами)
+  удаляет аудио старше `AUDIO_RETENTION_DAYS` (`call_audio.expires_at`); удаляются
+  все объекты записи — смесь, ноги (`channel_urls`) и незавершённые чанки
+  докачки (`pending_uploads`). Транскрипт сохраняется — лимит срока только на аудио.
+- **Redaction** — `infrastructure/redaction.py` (`redact`/`redact_preview`);
+  промпты/ответы LLM по умолчанию не логируются, а при отладке проходят через
+  редакцию PII.
+- **Аудио и транскрипты at-rest** — объекты в MinIO с SSE-AES256; `transcripts`
+  (текст/сегменты) и `agreement_extractions` (raw/validated LLM-вывод) шифруются
+  на уровне ORM (Fernet, `DATA_ENCRYPTION_KEY`, `infrastructure/crypto.py`).
 - Не коммитить секреты, `HF_TOKEN`, аудиофайлы и реальные транскрипты
   (research-аудио в `.gitignore`).
 - Запись возможна только после `answered` + согласия; правило не обходится в

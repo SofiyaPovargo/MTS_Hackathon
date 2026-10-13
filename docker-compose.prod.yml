@@ -1,0 +1,34 @@
+# Production overrides. Never used by the default dev command: run it together
+# with the base file and WITHOUT the dev override, so dev ports stay closed:
+#
+#   docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d
+#
+# Only nginx is published, on 80/443, and TLS terminates on real Let's Encrypt
+# certificates mounted read-only from the host. Secrets come from `.env`, which
+# is never committed (only `.env.example` is). See `docs/deploy.md`.
+
+services:
+  # Restart on crash / host reboot; `migrate` deliberately does not restart.
+  api:
+    restart: unless-stopped
+  worker-asr:
+    restart: unless-stopped
+  worker-ai:
+    restart: unless-stopped
+  worker-notifications:
+    restart: unless-stopped
+  beat:
+    restart: unless-stopped
+  worker-asr-live:
+    restart: unless-stopped
+  worker-ai-live:
+    restart: unless-stopped
+
+  nginx:
+    restart: unless-stopped
+    volumes:
+      # certbot output on the host. The nginx entrypoint self-signs only when
+      # these are absent, so a missing certificate fails loudly at `nginx -t`.
+      # Set PUBLIC_HOSTNAME to the DNS name the certificate was issued for.
+      - /etc/letsencrypt/live/${PUBLIC_HOSTNAME:-localhost}/fullchain.pem:/etc/nginx/certs/server.crt:ro
+      - /etc/letsencrypt/live/${PUBLIC_HOSTNAME:-localhost}/privkey.pem:/etc/nginx/certs/server.key:ro

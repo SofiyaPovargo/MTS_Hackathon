@@ -32,6 +32,17 @@ class Conflict(DomainError):
     pass
 
 
+class UploadOffsetMismatch(Conflict):
+    """A chunk arrived out of order; the client must resume at ``expected_offset``."""
+
+    def __init__(self, expected_offset: int, total: int) -> None:
+        self.expected_offset = expected_offset
+        self.total = total
+        super().__init__(
+            f"upload offset mismatch: expected {expected_offset} of {total} bytes"
+        )
+
+
 class ValidationFailed(DomainError):
     pass
 

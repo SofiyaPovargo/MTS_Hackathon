@@ -164,6 +164,14 @@ async def get_task(session: AsyncSession, task_id: uuid.UUID) -> Task | None:
     return cast("Task | None", await session.get(Task, task_id))
 
 
+async def get_task_for_agreement(session: AsyncSession, agreement_id: uuid.UUID) -> Task | None:
+    """The task created from an agreement, if any (one per confirmed agreement)."""
+    result = await session.execute(
+        select(Task).where(Task.agreement_id == agreement_id).order_by(Task.created_at).limit(1)
+    )
+    return result.scalars().first()
+
+
 async def list_tasks_for_user(
     session: AsyncSession, user_id: uuid.UUID, *, limit: int = 500
 ) -> Sequence[Task]:
