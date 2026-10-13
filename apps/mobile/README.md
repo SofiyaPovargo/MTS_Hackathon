@@ -4,9 +4,11 @@
 запись и анализ разговора, карточки договорённостей, задачи, личная и
 менеджерская доски. Одна кодовая база для Android и iOS (`plan.md`, `AGENTS.md`).
 
-Текущий объём — **Этап 3 (мобильная основа)**: авторизация, контакты, личная
-доска, локальный кэш SQLite, Repository и синхронизация. Звонки, consent и
-live-карточка — следующие этапы (см. `TEAM_PLAN.md`).
+Текущий объём — **Этапы 3–4**: мобильная основа (авторизация, контакты, личная
+доска, SQLite-кэш, Repository и синхронизация) и **звонки на Dart-уровне** (порт
+`VoiceCallProvider` за DI, `CallController`, экран звонка, зеркало
+стейт-машины, mock-провайдер). Consent и live-карточка — следующие этапы
+(см. `TEAM_PLAN.md`).
 
 ## Слои (чистая архитектура)
 
@@ -17,16 +19,22 @@ lib/
   domain/                   сущности и правила, без Flutter/плагинов
     enums.dart              wire-enums (должны совпадать с backend)
     models.dart             UserProfile, AuthSession, TaskItem, Agreement, Call, ContactItem
+    call.dart               CallSignal/CallState + зеркало стейт-машины звонка
     sync_models.dart        SyncChange/Pull/Operation/Result (контракт /sync)
     ports.dart              интерфейсы (AuthApi, SessionStore, BoardApi, SyncApi,
-                            ContactsSource, LocalBoardStore, OutboxStore, SyncStateStore)
+                            CallApi, VoiceCallProvider, ContactsSource,
+                            LocalBoardStore, OutboxStore, SyncStateStore)
   application/              контроллеры Riverpod + провайдеры (wiring)
+    call_controller.dart    сессия звонка (набор/ответ/отбой/mute, сигналы провайдера)
   infrastructure/           реализации портов
-    api/                    dio-клиент (bearer, refresh-on-401), auth/board/sync API
+    api/                    dio-клиент (bearer, refresh-on-401), auth/board/sync/call API
     db/                     sqflite: схема, session, outbox, sync_state, доска
     repositories/           контакты устройства за портом
     sync/sync_engine.dart   цикл синхронизации
+    voice/                  mock voice-провайдер (реальный SDK — за тем же портом)
   ui/                       экраны и виджеты (никакой бизнес-логики)
+    screens/call_screen.dart     экран звонка (оверлей) + таймер
+    screens/dialer_screen.dart   набор номера
 ```
 
 Правило проекта: бизнес-логика, ML и внешние адаптеры — вне виджетов. Виджеты
@@ -55,6 +63,31 @@ flutter run --dart-define=API_BASE_URL=http://192.168.1.50:8000/api   # устр
 Полный стек поднимается из корня репозитория: `docker compose up -d`. Наружу
 смотрит только nginx (TLS) — `https://localhost/api` (нужен `-k` для self-signed).
 Для отладки без nginx доступен прямой `http://127.0.0.1:8000/api`.
+
+## Звонки (Этап 4)
+
+Звонки абстрагированы портом `VoiceCallProvider` (`domain/ports.dart`):
+`ensureMicrophonePermission`, `signals` (incoming/ringing/answered/ended/dropped/
+missed), `dial`, `answer`, `decline`, `hangup`, `setMuted`. Платформенный адаптер
+(CallKit/PushKit, Telecom/ConnectionService, MTS Exolve SDK) внедряется через DI
+— в фичах платформенных API нет.
+
+- `application/call_controller.dart` — `CallController` (Riverpod): исходящий
+  набор (`POST /calls` + `dial`), входящий (answer/decline), mute, hangup. Каждое
+  событие провайдера проходит через клиентское зеркало стейт-машины
+  (`domain/call.dart`, совпадает с backend `state_machine.py`).
+- Микрофон запрашивается контекстно при старте/ответе; при отказе звонок не
+  начинается и показывается сообщение (ручной ввод контакта остаётся).
+- Экран звонка — оверлей поверх всего приложения (`CallOverlay`), поэтому
+  входящий виден на любом экране: таймер, mute, завершение.
+- Начать звонок: иконка на контакте или FAB «Новый звонок» на доске.
+- `infrastructure/voice/mock_voice_provider.dart` — mock-провайдер: исходящий
+  соединяется автоматически через 2 c, входящий можно смоделировать dev-кнопкой
+  на доске (debug-сборка). Реального VoIP SDK здесь нет — он подключается на
+  машине с Android SDK/Xcode.
+
+События совпадают с backend `CallEvent` (`incoming`, `ringing`, `answered`,
+`ended`, `dropped`, `missed`); статусы — с backend `CallStatus`.
 
 ## Вход
 
@@ -101,9 +134,11 @@ flutter run            # нужен Android SDK / Xcode
 sync-движок, контроллеры и виджеты). Команды `flutter build` / `flutter run`
 надо выполнять на машине с установленными Android SDK и/или Xcode.
 
-Платформенно-зависимый код (контакты через `flutter_contacts`; в следующих
-этапах CallKit/PushKit, Telecom/ConnectionService, APNs/FCM) скрыт за портами и
-внедряется через DI — в фичах Android/iOS-only API не используются.
+Платформенно-зависимый код (контакты через `flutter_contacts`; voice-провайдер —
+CallKit/PushKit, Telecom/ConnectionService, MTS Exolve SDK; далее APNs/FCM) скрыт
+за портами и внедряется через DI — в фичах Android/iOS-only API не используются.
+Звонки на Этапе 4 реализованы на Dart-уровне: порт + контроллер + экран + mock;
+нативный адаптер подключается на машине с установленными Android SDK/Xcode.
 
 ## Контракт API
 

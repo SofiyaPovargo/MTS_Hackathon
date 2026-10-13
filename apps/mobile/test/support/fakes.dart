@@ -1,3 +1,6 @@
+import 'dart:async';
+
+import 'package:agreement_capture/domain/call.dart';
 import 'package:agreement_capture/domain/enums.dart';
 import 'package:agreement_capture/domain/models.dart';
 import 'package:agreement_capture/domain/ports.dart';
@@ -66,6 +69,25 @@ Agreement testAgreement({String id = '33333333-3333-3333-3333-333333333333', int
     confidence: 0.92,
     status: AgreementStatus.detected,
     version: version,
+    createdAt: DateTime.utc(2026, 10),
+    updatedAt: DateTime.utc(2026, 10),
+  );
+}
+
+Call testCall({
+  String id = '55555555-5555-5555-5555-555555555555',
+  CallDirection direction = CallDirection.outbound,
+  String contactPhone = '+79000000002',
+  String? contactName = 'Анна',
+  String status = 'ringing',
+}) {
+  return Call(
+    id: id,
+    direction: direction,
+    contactPhone: contactPhone,
+    contactName: contactName,
+    status: status,
+    version: 1,
     createdAt: DateTime.utc(2026, 10),
     updatedAt: DateTime.utc(2026, 10),
   );
@@ -253,4 +275,96 @@ class InMemorySyncStateStore implements SyncStateStore {
   @override
   Future<void> writeRecordVersion(String entityType, String id, int version) async =>
       versions['$entityType:$id'] = version;
+}
+
+/// Controllable [VoiceCallProvider]: records control calls and lets tests emit
+/// provider signals explicitly (no timers, no platform channels).
+class FakeVoiceCallProvider implements VoiceCallProvider, IncomingCallSimulator {
+  FakeVoiceCallProvider({this.microphoneGranted = true});
+
+  bool microphoneGranted;
+  final StreamController<CallSignal> _controller =
+      StreamController<CallSignal>.broadcast();
+  final List<String> dialed = <String>[];
+  final List<String> answered = <String>[];
+  final List<String> declined = <String>[];
+  final List<String> hungUp = <String>[];
+  final List<bool> muted = <bool>[];
+  int _sequence = 0;
+
+  @override
+  Stream<CallSignal> get signals => _controller.stream;
+
+  @override
+  Future<bool> ensureMicrophonePermission() async => microphoneGranted;
+
+  @override
+  Future<String> dial(String phone, {String? name}) async {
+    dialed.add(phone);
+    return 'fake-${++_sequence}';
+  }
+
+  @override
+  Future<void> answer(String externalId) async {
+    answered.add(externalId);
+    emit(CallSignal(kind: CallSignalKind.answered, externalId: externalId));
+  }
+
+  @override
+  Future<void> decline(String externalId) async {
+    declined.add(externalId);
+    emit(CallSignal(kind: CallSignalKind.missed, externalId: externalId));
+  }
+
+  @override
+  Future<void> hangup(String externalId) async {
+    hungUp.add(externalId);
+    emit(CallSignal(kind: CallSignalKind.ended, externalId: externalId));
+  }
+
+  @override
+  Future<void> setMuted(String externalId, bool value) async => muted.add(value);
+
+  @override
+  void simulateIncoming({required String phone, String? name}) {
+    emit(CallSignal(
+      kind: CallSignalKind.incoming,
+      externalId: 'fake-${++_sequence}',
+      phone: phone,
+      name: name,
+    ));
+  }
+
+  void emit(CallSignal signal) {
+    if (!_controller.isClosed) _controller.add(signal);
+  }
+
+  Future<void> dispose() => _controller.close();
+}
+
+class FakeCallApi implements CallApi {
+  FakeCallApi({this.error});
+
+  ApiException? error;
+  final List<Call> created = <Call>[];
+
+  @override
+  Future<Call> createCall({
+    required CallDirection direction,
+    required String calleePhone,
+    String? contactName,
+  }) async {
+    final failure = error;
+    if (failure != null) throw failure;
+    final call = testCall(
+      direction: direction,
+      contactPhone: calleePhone,
+      contactName: contactName,
+    );
+    created.add(call);
+    return call;
+  }
+
+  @override
+  Future<Call> getCall(String id) async => testCall(id: id);
 }

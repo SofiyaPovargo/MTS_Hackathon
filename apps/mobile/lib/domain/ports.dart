@@ -3,6 +3,8 @@
 /// No Flutter/plugin imports here — keeps the domain layer testable.
 library;
 
+import 'call.dart';
+import 'enums.dart';
 import 'models.dart';
 import 'sync_models.dart';
 
@@ -86,4 +88,46 @@ abstract class SyncStateStore {
   Future<int> readRecordVersion(String entityType, String id);
 
   Future<void> writeRecordVersion(String entityType, String id, int version);
+}
+
+/// Voice provider (VoIP / PSTN) behind a port.
+///
+/// Platform-specific implementations (CallKit/PushKit on iOS,
+/// Telecom/ConnectionService on Android, or the MTS Exolve mobile SDK) are
+/// injected through DI; feature code never calls a platform API directly
+/// (AGENTS.md). A mock implementation backs local development and tests.
+abstract class VoiceCallProvider {
+  /// Contextual microphone permission. `false` means the call must not start.
+  Future<bool> ensureMicrophonePermission();
+
+  /// Provider signals: incoming, ringing, answered, ended, dropped, missed.
+  Stream<CallSignal> get signals;
+
+  /// Places an outgoing call and returns the provider call id.
+  Future<String> dial(String phone, {String? name});
+
+  Future<void> answer(String externalId);
+
+  Future<void> decline(String externalId);
+
+  Future<void> hangup(String externalId);
+
+  Future<void> setMuted(String externalId, bool muted);
+}
+
+/// Optional dev capability: synthesizes an incoming call without a real
+/// provider. Implemented by the mock only; feature code checks the type.
+abstract class IncomingCallSimulator {
+  void simulateIncoming({required String phone, String? name});
+}
+
+/// Call records on the backend (`POST /calls`, `GET /calls/{id}`).
+abstract class CallApi {
+  Future<Call> createCall({
+    required CallDirection direction,
+    required String calleePhone,
+    String? contactName,
+  });
+
+  Future<Call> getCall(String id);
 }

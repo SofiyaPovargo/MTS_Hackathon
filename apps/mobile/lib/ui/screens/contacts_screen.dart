@@ -82,6 +82,11 @@ class _ContactsScreenState extends ConsumerState<ContactsScreen> {
                       leading: const Icon(Icons.person_outline),
                       title: Text(contact.displayName),
                       subtitle: Text(contact.phone),
+                      trailing: IconButton(
+                        icon: const Icon(Icons.call),
+                        tooltip: 'Позвонить',
+                        onPressed: () => _call(contact),
+                      ),
                     );
                   },
                 ),
@@ -117,6 +122,11 @@ class _ContactsScreenState extends ConsumerState<ContactsScreen> {
             leading: const Icon(Icons.person_add_alt),
             title: Text(contact.displayName),
             subtitle: Text(contact.phone),
+            trailing: IconButton(
+              icon: const Icon(Icons.call),
+              tooltip: 'Позвонить',
+              onPressed: () => _call(contact),
+            ),
           ),
         ),
       ],
@@ -132,5 +142,15 @@ class _ContactsScreenState extends ConsumerState<ContactsScreen> {
       }
       _manualController.clear();
     });
+  }
+
+  /// Places an outgoing call; a failure (no permission, backend down) is shown
+  /// as a message and the screen stays put.
+  Future<void> _call(ContactItem contact) async {
+    final error = await ref
+        .read(callControllerProvider.notifier)
+        .startOutgoing(contact.phone, name: contact.displayName);
+    if (!mounted || error == null) return;
+    ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(error)));
   }
 }

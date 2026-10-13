@@ -3,10 +3,11 @@
 Обновлять при каждом мёрже. Легенда: ✅ готово и зелёные гейты · 🔶 частично
 (есть backend/исследование, ждёт интеграции) · ⬜ не начато.
 
-Сводка на 2026-10-13: **Этапы 1–3 закрыты**, ML-исследование слито. **ML-пайплайн
+Сводка на 2026-10-13: **Этапы 1–3 закрыты, Этап 4 (mobile, Dart) закрыт**,
+ML-исследование слито. **ML-пайплайн
 переведён в прод** (PR #5): запись → роли из каналов VoIP → сегментированный
 транскрипт → LLM-извлечение → валидация → `agreement_detected`; реальные воркеры
-и триггер `POST /calls/{id}/analyze`. Разработка ведётся в ветках `track/mobile`
+и триггер `POST /calls/{id}/analyze`. Разработка ведётся в ветках `track/mobile-calls`
 (Xivalor), `track/ml` (Sofiya), `track/backend-voice` (Mav); после зелёных гейтов
 и ревью — мерж в `development`.
 
@@ -18,8 +19,8 @@
 |---|---|---|---|
 | 1. Подготовка | ✅ | MVP-сценарий, роли, стек Flutter, репо, структура; **voice-провайдер выбран: МТС Exolve** (§11.1) | — |
 | 2. Серверная основа | ✅ | Postgres/Redis/MinIO, модели, auth+роли, CRUD, docker compose, миграции; 69 тестов | — |
-| 3. Мобильная основа | ✅ | `apps/mobile` (Flutter): слои UI/App/Domain/Infra, OTP-auth + refresh, контакты за портом, личная доска, SQLite (tasks/agreements/outbox/sync_state/session), Repository + sync (pull→apply→push→ack→token), `--dart-define=API_BASE_URL`; analyze ✓, 33 теста | сборка/прогон на эмуляторе (нет Android SDK/Xcode в среде) — см. ограничение |
-| 4. Звонки | 🔶 | `VoiceProviderPort` (mock) + webhook-маршруты в backend; state machine | реальный провайдер (блокер), VoIP SDK, экран звонка, исходящие |
+| 3. Мобильная основа | ✅ | `apps/mobile` (Flutter): слои UI/App/Domain/Infra, OTP-auth + refresh, контакты за портом, личная доска, SQLite (tasks/agreements/outbox/sync_state/session), Repository + sync (pull→apply→push→ack→token), `--dart-define=API_BASE_URL`; analyze ✓ | сборка/прогон на эмуляторе (нет Android SDK/Xcode в среде) — см. ограничение |
+| 4. Звонки | 🔶 | backend: `VoiceProviderPort` (mock) + webhook-маршруты + state machine; **mobile (Dart)**: `VoiceCallProvider` за DI + `CallApi`, `CallController` (набор/ответ/отбой/mute), экран звонка (оверлей: таймер, mute, входящий), дозвон из контактов/доски, `MockVoiceCallProvider`, зеркало стейт-машины; analyze ✓, **53 теста** | нативный адаптер (CallKit/Telecom/Exolve SDK) и реальные входящие VoIP — нужна машина с Android SDK/Xcode; реальный провайдер (блокер) |
 | 5. Consent flow | 🔶 | backend-логика целиком: `consent.py`, `call_session.py`, state machine, тесты notice/DTMF/refusal/withdraw | аудио-уведомление собеседнику (play_notice), DTMF через провайдера, мобильные экраны |
 | 6. Запись и анализ | 🔶 | **прод-пайплайн** (`ml/pipeline.py`): декодер + роли из каналов VoIP / диаризация для mono-PSTN (`ml/stt`), транскрипт в `transcripts` (JSONB-сегменты, `role_source`), LLM+Instructor + валидация (`ml/extraction`), реальные воркеры `process_asr`/`run_llm_extraction`, эмиссия `partial_transcript`/`agreement_detected`, триггер `POST /calls/{id}/analyze`, идемпотентность по `call_id` | приём аудио от клиента (`MEDIA_INGEST_URL` — эндпоинта нет), авто-триггер по Exolve `crr` (скачивание записи в MinIO), live-стриминг (сейчас batch по файлу), шифрование/redaction |
 | 7. Договорённости и задачи | 🔶 | backend: agreement-статусы, confirm→task, PATCH-guards, audit; тесты | live-карточка (UI), напоминания, привязка к звонку в UI |
@@ -164,12 +165,12 @@ models, sync_models, ports), `application/` (Riverpod-контроллеры + p
 | unit (4) | test_dates, test_rules, test_state_machine, test_exolve | относительные даты, пороги, переходы звонка, Exolve (события, тело маршрута, Call Record API, порт) |
 | ml (4) | test_tone_client, test_pipeline, test_channels, test_extraction | протокол T-one, слияние ролей/ресамплинг, роли из каналов VoIP, извлечение+валидация (`extract_pair`) |
 | integration (9) | test_auth, test_access, test_call_consent, test_agreements_tasks, test_schedule, test_sync, test_manager, test_ws_events, test_ml_pipeline | OTP/refresh, права ролей+команды, запись без consent, confirm→task, календарь/напоминания/черновик (только confirmed), sync-идемпотентность, WS auth/ownership/replay/live, сквозной ML-пайплайн + `POST /calls/{id}/analyze` |
-| mobile (7) | domain/models, infrastructure/local_stores, infrastructure/sync_engine, application/auth_controller, application/board_controller, application/contacts_controller, widget/app | парсинг моделей, SQLite-хранилища, цикл sync + идемпотентность/конфликт/ретраи, контроллеры, экраны |
+| mobile (10) | domain/models, domain/call, infrastructure/local_stores, infrastructure/sync_engine, application/auth_controller, application/board_controller, application/contacts_controller, application/call_controller, widget/app, widget/call_screen | парсинг моделей, стейт-машина звонка, SQLite-хранилища, цикл sync + идемпотентность/конфликт/ретраи, контроллеры, экраны (доска, контакты, звонок) |
 
 Backend: **135 passed** (domain 6 + unit 54 + ml 27 + integration 48);
 интеграционные требуют `docker compose up -d postgres redis` (отдельная БД
 `agreements_test`).
-Mobile: **33 passed** (`flutter test`, без Docker); локальные хранилища тестируются
+Mobile: **53 passed** (`flutter test`, без Docker); локальные хранилища тестируются
 через `sqflite_common_ffi`.
 
 ---
@@ -187,7 +188,7 @@ curl -k https://localhost/api/healthz   # живо (nginx TLS)
 
 cd apps/mobile
 flutter analyze            # lint мобильного (чисто)
-flutter test               # 33 теста (Dart-уровень, без Docker)
+flutter test               # 53 теста (Dart-уровень, без Docker)
 ```
 
 Демо-флоу (проверен): OTP-логин (dev OTP 1234) → `/calls` POST + вебхук
@@ -220,3 +221,5 @@ flutter test               # 33 теста (Dart-уровень, без Docker)
 - `7268635`/`156b6b5` — LLM-extractor (research) — PR #3
 - `071948d`/`eb0d40d` — Этап 4/5 (backend): Exolve-адаптер, consent-flow, WS-события — PR #4
 - `64b3fda`/`79bffed` — **Этап 6 (backend)**: канальные роли VoIP, прод-пайплайн ML, воркеры, `POST /calls/{id}/analyze` — PR #5
+- `3b3119c`/`d1948d5` — docs/team: статус ML-пайплайна, сплит Xivalor/Mav, `scripts/local-db.sh` — PR #6
+- `b7f2ccb` — **Этап 4 (mobile, Dart)**: порт `VoiceCallProvider` за DI + `CallApi`, `CallController`, зеркало стейт-машины, экран звонка (оверлей) + дозвон, mock-провайдер; analyze ✓, 53 теста — PR #7 (нативный SDK-адаптер — на машине с Android SDK/Xcode)
