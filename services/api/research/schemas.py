@@ -2,6 +2,7 @@
 
 Mirrors the domain models that will later live in src/api/domain/.
 """
+
 from __future__ import annotations
 
 from datetime import date, time

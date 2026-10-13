@@ -7,6 +7,7 @@ For each data/gold/<id>.json:
   4. rewrite gold dialogue turn timestamps and commitment audio times
      using the real synthesized durations.
 """
+
 from __future__ import annotations
 
 import json
@@ -16,7 +17,6 @@ import wave
 from pathlib import Path
 
 import numpy as np
-
 from synth_tts import SAMPLE_RATE, VOICES, speak
 
 RESEARCH_DIR = Path(__file__).resolve().parent
@@ -40,7 +40,9 @@ def write_wav(path: Path, audio: np.ndarray, sr: int = SAMPLE_RATE) -> None:
         w.writeframes(data.tobytes())
 
 
-def concat(segments: list[np.ndarray], pause: int) -> tuple[np.ndarray, list[tuple[int, int]]]:
+def concat(
+    segments: list[np.ndarray], pause: int
+) -> tuple[np.ndarray, list[tuple[int, int]]]:
     """Join segments with silence; return full buffer and (start,end) sample offsets."""
     out: list[np.ndarray] = []
     starts: list[tuple[int, int]] = []
@@ -61,17 +63,50 @@ def to_phone_wav(src: Path, dst: Path) -> None:
     tmp = dst.with_suffix(".mulaw")
     subprocess.run(
         [
-            FFMPEG, "-y", "-loglevel", "error",
-            "-i", str(src),
-            "-af", "highpass=f=100,lowpass=f=3400",
-            "-ar", "8000", "-ac", "1", "-c:a", "pcm_mulaw",
-            "-f", "mulaw", str(tmp),
+            FFMPEG,
+            "-y",
+            "-loglevel",
+            "error",
+            "-i",
+            str(src),
+            "-af",
+            "highpass=f=100,lowpass=f=3400",
+            "-ar",
+            "8000",
+            "-ac",
+            "1",
+            "-c:a",
+            "pcm_mulaw",
+            "-f",
+            "mulaw",
+            str(tmp),
         ],
         check=True,
     )
     subprocess.run(
-        [FFMPEG, "-y", "-loglevel", "error", "-f", "mulaw", "-ar", "8000", "-ac", "1",
-         "-i", str(tmp), "-ar", "16000", "-ac", "1", "-c:a", "pcm_s16le", "-f", "wav", str(dst)],
+        [
+            FFMPEG,
+            "-y",
+            "-loglevel",
+            "error",
+            "-f",
+            "mulaw",
+            "-ar",
+            "8000",
+            "-ac",
+            "1",
+            "-i",
+            str(tmp),
+            "-ar",
+            "16000",
+            "-ac",
+            "1",
+            "-c:a",
+            "pcm_s16le",
+            "-f",
+            "wav",
+            str(dst),
+        ],
         check=True,
     )
     tmp.unlink(missing_ok=True)
@@ -138,8 +173,7 @@ def process_case(case_path: Path, tts_ready: bool) -> bool:
         json.dumps(case, ensure_ascii=False, indent=2) + "\n", encoding="utf-8"
     )
     print(
-        f"  {case['id']:28s} {duration:6.1f}s "
-        f"-> {out_path.relative_to(RESEARCH_DIR)}"
+        f"  {case['id']:28s} {duration:6.1f}s -> {out_path.relative_to(RESEARCH_DIR)}"
     )
     return True
 
@@ -148,13 +182,16 @@ def main() -> None:
     AUDIO_DIR.mkdir(parents=True, exist_ok=True)
     cases = sorted(GOLD_DIR.glob("*.json"))
     if not cases:
-        print("No gold cases found"); return
+        print("No gold cases found")
+        return
 
     try:
         speak("тест", "aidar")  # force model download once
         tts_ready = True
     except Exception as exc:  # noqa: BLE001
-        print(f"TTS unavailable: {exc}. Skipping synthesis (timestamps stay placeholder).")
+        print(
+            f"TTS unavailable: {exc}. Skipping synthesis (timestamps stay placeholder)."
+        )
         tts_ready = False
 
     done = 0

@@ -1,4 +1,5 @@
 """Silero TTS synthesis helpers for research data generation."""
+
 from __future__ import annotations
 
 from typing import Any

@@ -4,6 +4,7 @@ Writes research/data/gold/<id>.json and research/data/manifest.json.
 Timestamps are placeholder estimates (chars/sec); they will be refreshed
 from actual TTS synthesis in 01_data_synth.ipynb.
 """
+
 from __future__ import annotations
 
 import json
@@ -46,11 +47,23 @@ CASES: list[GoldCase] = [
         category="explicit_deadline",
         conversation_date=CONV_DATE,
         user_timezone=TZ,
-        participants={"operator": "Анна (менеджер клиники)", "client": "Игорь Владимирович"},
+        participants={
+            "operator": "Анна (менеджер клиники)",
+            "client": "Игорь Владимирович",
+        },
         dialogue=[
-            DialogueTurn(speaker="operator", text="Здравствуйте, Игорь Владимирович! Я Анна из клиники «Восстановление», по поводу вашего курса реабилитации."),
-            DialogueTurn(speaker="client", text="Здравствуйте, Анна. Да, я вас внимательно слушаю."),
-            DialogueTurn(speaker="operator", text="Мы подготовили для вас договор, я пришлю его до пятницы удобным вам способом."),
+            DialogueTurn(
+                speaker="operator",
+                text="Здравствуйте, Игорь Владимирович! Я Анна из клиники «Восстановление», по поводу вашего курса реабилитации.",
+            ),
+            DialogueTurn(
+                speaker="client",
+                text="Здравствуйте, Анна. Да, я вас внимательно слушаю.",
+            ),
+            DialogueTurn(
+                speaker="operator",
+                text="Мы подготовили для вас договор, я пришлю его до пятницы удобным вам способом.",
+            ),
             DialogueTurn(speaker="client", text="Хорошо, буду ждать. Спасибо!"),
         ],
         expected_commitments=[
@@ -71,11 +84,20 @@ CASES: list[GoldCase] = [
         user_timezone=TZ,
         participants={"operator": "Алексей (банк)", "client": "клиент"},
         dialogue=[
-            DialogueTurn(speaker="operator", text="Добрый день! Алексей из банка, по вашей заявке на кредит."),
+            DialogueTurn(
+                speaker="operator",
+                text="Добрый день! Алексей из банка, по вашей заявке на кредит.",
+            ),
             DialogueTurn(speaker="client", text="Добрый день, да, слушаю."),
-            DialogueTurn(speaker="operator", text="Нам нужно созвониться для уточнения деталей. Предлагаю во вторник в пятнадцать ноль-ноль."),
+            DialogueTurn(
+                speaker="operator",
+                text="Нам нужно созвониться для уточнения деталей. Предлагаю во вторник в пятнадцать ноль-ноль.",
+            ),
             DialogueTurn(speaker="client", text="Вторник в три часа дня мне подходит."),
-            DialogueTurn(speaker="operator", text="Отлично, тогда созваниваемся во вторник в пятнадцать ноль-ноль."),
+            DialogueTurn(
+                speaker="operator",
+                text="Отлично, тогда созваниваемся во вторник в пятнадцать ноль-ноль.",
+            ),
         ],
         expected_commitments=[
             ExpectedCommitment(
@@ -96,10 +118,19 @@ CASES: list[GoldCase] = [
         user_timezone=TZ,
         participants={"operator": "мастер (ремонт техники)", "client": "клиент"},
         dialogue=[
-            DialogueTurn(speaker="client", text="Здравствуйте, это ремонт техники? Вопрос по оплате за ремонт холодильника."),
-            DialogueTurn(speaker="operator", text="Да, здравствуйте. Ремонт завершён, стоимость — четыре тысячи рублей."),
+            DialogueTurn(
+                speaker="client",
+                text="Здравствуйте, это ремонт техники? Вопрос по оплате за ремонт холодильника.",
+            ),
+            DialogueTurn(
+                speaker="operator",
+                text="Да, здравствуйте. Ремонт завершён, стоимость — четыре тысячи рублей.",
+            ),
             DialogueTurn(speaker="client", text="Когда нужно оплатить?"),
-            DialogueTurn(speaker="operator", text="Оплату можно внести до двадцатого числа, наличными или переводом."),
+            DialogueTurn(
+                speaker="operator",
+                text="Оплату можно внести до двадцатого числа, наличными или переводом.",
+            ),
             DialogueTurn(speaker="client", text="Хорошо, оплачу до двадцатого."),
         ],
         expected_commitments=[
@@ -122,10 +153,19 @@ CASES: list[GoldCase] = [
         user_timezone=TZ,
         participants={"operator": "типография", "client": "клиент"},
         dialogue=[
-            DialogueTurn(speaker="client", text="Здравствуйте, когда будет готов мой заказ на печать визиток?"),
-            DialogueTurn(speaker="operator", text="Здравствуйте! Постараемся сделать быстро, как только напечатаем — сразу сообщим."),
+            DialogueTurn(
+                speaker="client",
+                text="Здравствуйте, когда будет готов мой заказ на печать визиток?",
+            ),
+            DialogueTurn(
+                speaker="operator",
+                text="Здравствуйте! Постараемся сделать быстро, как только напечатаем — сразу сообщим.",
+            ),
             DialogueTurn(speaker="client", text="Мне бы хотя бы примерно знать срок."),
-            DialogueTurn(speaker="operator", text="Точный срок пока назвать не могу, наберём вас."),
+            DialogueTurn(
+                speaker="operator",
+                text="Точный срок пока назвать не могу, наберём вас.",
+            ),
         ],
         expected_commitments=[
             ExpectedCommitment(
@@ -146,10 +186,19 @@ CASES: list[GoldCase] = [
         user_timezone=TZ,
         participants={"operator": "транспортная компания", "client": "клиент"},
         dialogue=[
-            DialogueTurn(speaker="client", text="Здравствуйте, по моей накладной когда будет доставка?"),
-            DialogueTurn(speaker="operator", text="Добрый день! Доставка завтра, то есть к пятнице к двенадцати."),
+            DialogueTurn(
+                speaker="client",
+                text="Здравствуйте, по моей накладной когда будет доставка?",
+            ),
+            DialogueTurn(
+                speaker="operator",
+                text="Добрый день! Доставка завтра, то есть к пятнице к двенадцати.",
+            ),
             DialogueTurn(speaker="client", text="Но сегодня уже пятница."),
-            DialogueTurn(speaker="operator", text="Ой, прошу прощения. Значит, доставка завтра, в субботу."),
+            DialogueTurn(
+                speaker="operator",
+                text="Ой, прошу прощения. Значит, доставка завтра, в субботу.",
+            ),
         ],
         expected_commitments=[
             ExpectedCommitment(
@@ -171,8 +220,12 @@ CASES: list[GoldCase] = [
         participants={"operator": "автосервис", "client": "клиент"},
         dialogue=[
             DialogueTurn(speaker="operator", text="Автосервис «Форсаж», здравствуйте."),
-            DialogueTurn(speaker="client", text="Здравствуйте, я хотел узнать, готова ли машина."),
-            DialogueTurn(speaker="operator", text="Да, работа завершена, можете забирать."),
+            DialogueTurn(
+                speaker="client", text="Здравствуйте, я хотел узнать, готова ли машина."
+            ),
+            DialogueTurn(
+                speaker="operator", text="Да, работа завершена, можете забирать."
+            ),
             DialogueTurn(speaker="client", text="Отлично, спасибо за информацию!"),
             DialogueTurn(speaker="operator", text="Всего доброго!"),
         ],
@@ -186,9 +239,15 @@ CASES: list[GoldCase] = [
         user_timezone=TZ,
         participants={"operator": "бухгалтерия", "client": "Наталья Петровна"},
         dialogue=[
-            DialogueTurn(speaker="operator", text="Здравствуйте, Наталья Петровна, это бухгалтерия компании «Ромашка»."),
+            DialogueTurn(
+                speaker="operator",
+                text="Здравствуйте, Наталья Петровна, это бухгалтерия компании «Ромашка».",
+            ),
             DialogueTurn(speaker="client", text="Здравствуйте, я вас слушаю."),
-            DialogueTurn(speaker="operator", text="По вашему вопросу о документах я перезвоню вам в четверг после обеда."),
+            DialogueTurn(
+                speaker="operator",
+                text="По вашему вопросу о документах я перезвоню вам в четверг после обеда.",
+            ),
             DialogueTurn(speaker="client", text="Хорошо, буду ждать звонка."),
         ],
         expected_commitments=[
@@ -209,8 +268,14 @@ CASES: list[GoldCase] = [
         user_timezone=TZ,
         participants={"operator": "ремонтно-строительная бригада", "client": "клиент"},
         dialogue=[
-            DialogueTurn(speaker="client", text="Добрый день, это по ремонту квартиры. Сколько стартовый платёж?"),
-            DialogueTurn(speaker="operator", text="Здравствуйте. Аванс — пятнадцать тысяч рублей, переведите до среды."),
+            DialogueTurn(
+                speaker="client",
+                text="Добрый день, это по ремонту квартиры. Сколько стартовый платёж?",
+            ),
+            DialogueTurn(
+                speaker="operator",
+                text="Здравствуйте. Аванс — пятнадцать тысяч рублей, переведите до среды.",
+            ),
             DialogueTurn(speaker="client", text="Окей, переведу аванс до среды."),
         ],
         expected_commitments=[
@@ -234,7 +299,10 @@ CASES: list[GoldCase] = [
         participants={"operator": "подрядчик", "client": "заказчик"},
         dialogue=[
             DialogueTurn(speaker="client", text="Когда сдадите отчётные документы?"),
-            DialogueTurn(speaker="operator", text="Документы будут готовы, мы сдадим их до конца месяца."),
+            DialogueTurn(
+                speaker="operator",
+                text="Документы будут готовы, мы сдадим их до конца месяца.",
+            ),
             DialogueTurn(speaker="client", text="Понял, ждём."),
         ],
         expected_commitments=[
@@ -255,10 +323,15 @@ CASES: list[GoldCase] = [
         user_timezone=TZ,
         participants={"operator": "офис продаж", "client": "клиент"},
         dialogue=[
-            DialogueTurn(speaker="operator", text="Здравствуйте! Это офис продаж. Предлагаю встретиться у нас в офисе, обсудим условия."),
+            DialogueTurn(
+                speaker="operator",
+                text="Здравствуйте! Это офис продаж. Предлагаю встретиться у нас в офисе, обсудим условия.",
+            ),
             DialogueTurn(speaker="client", text="Когда вам удобно?"),
             DialogueTurn(speaker="operator", text="Давайте в пятницу в десять утра."),
-            DialogueTurn(speaker="client", text="В пятницу в десять утра подходит, приеду."),
+            DialogueTurn(
+                speaker="client", text="В пятницу в десять утра подходит, приеду."
+            ),
         ],
         expected_commitments=[
             ExpectedCommitment(
@@ -279,11 +352,21 @@ CASES: list[GoldCase] = [
         user_timezone=TZ,
         participants={"operator": "Ольга (ТехноПоставка)", "client": "закупщик"},
         dialogue=[
-            DialogueTurn(speaker="operator", text="Алло, добрый день! Менеджер Ольга, компания «ТехноПоставка», по вашему заказу на серверы."),
+            DialogueTurn(
+                speaker="operator",
+                text="Алло, добрый день! Менеджер Ольга, компания «ТехноПоставка», по вашему заказу на серверы.",
+            ),
             DialogueTurn(speaker="client", text="Здравствуйте, да."),
-            DialogueTurn(speaker="operator", text="Договор пришлю завтра до конца дня."),
-            DialogueTurn(speaker="client", text="Хорошо. И ещё перезвоните мне после обеда."),
-            DialogueTurn(speaker="operator", text="Обязательно перезвоню. А аванс — пятьдесят тысяч, нужно внести до встречи."),
+            DialogueTurn(
+                speaker="operator", text="Договор пришлю завтра до конца дня."
+            ),
+            DialogueTurn(
+                speaker="client", text="Хорошо. И ещё перезвоните мне после обеда."
+            ),
+            DialogueTurn(
+                speaker="operator",
+                text="Обязательно перезвоню. А аванс — пятьдесят тысяч, нужно внести до встречи.",
+            ),
             DialogueTurn(speaker="client", text="Записал, аванс внесём."),
         ],
         expected_commitments=[
@@ -321,8 +404,13 @@ CASES: list[GoldCase] = [
         user_timezone=TZ,
         participants={"operator": "транспортная компания", "client": "клиент"},
         dialogue=[
-            DialogueTurn(speaker="client", text="Здравствуйте, а можно возить оборудование с холодильниками?"),
-            DialogueTurn(speaker="operator", text="Нужно уточнить у юриста, я перезвоню вам."),
+            DialogueTurn(
+                speaker="client",
+                text="Здравствуйте, а можно возить оборудование с холодильниками?",
+            ),
+            DialogueTurn(
+                speaker="operator", text="Нужно уточнить у юриста, я перезвоню вам."
+            ),
             DialogueTurn(speaker="client", text="Хорошо."),
         ],
         expected_commitments=[
@@ -344,7 +432,10 @@ CASES: list[GoldCase] = [
         user_timezone=TZ,
         participants={"operator": "отдел продаж", "client": "клиент"},
         dialogue=[
-            DialogueTurn(speaker="operator", text="Добрый день! Мы могли бы сделать вам скидку десять процентов, если вы оплатите сразу."),
+            DialogueTurn(
+                speaker="operator",
+                text="Добрый день! Мы могли бы сделать вам скидку десять процентов, если вы оплатите сразу.",
+            ),
             DialogueTurn(speaker="client", text="Мне нужно подумать."),
             DialogueTurn(speaker="operator", text="Конечно, без спешки."),
         ],
@@ -355,7 +446,10 @@ CASES: list[GoldCase] = [
                 title="Скидка 10% при оплате сразу",
                 owner=Owner.unknown,
                 status=CommitmentStatus.needs_clarification,
-                uncertainty=["предложение, а не подтверждённое соглашение", "не указаны дата и сумма"],
+                uncertainty=[
+                    "предложение, а не подтверждённое соглашение",
+                    "не указаны дата и сумма",
+                ],
             ),
         ],
         notes="Тест-кейс из скилла: отделять предложение от подтверждённого соглашения.",
@@ -367,9 +461,17 @@ CASES: list[GoldCase] = [
         user_timezone=TZ,
         participants={"operator": "курьерская служба", "client": "клиент"},
         dialogue=[
-            DialogueTurn(speaker="operator", text="Здравствуйте! Курьерская служба, по поводу доставки вашего заказа."),
-            DialogueTurn(speaker="client", text="Здравствуйте, сколько будет стоить доставка?"),
-            DialogueTurn(speaker="operator", text="Доставка — пятьсот рублей, оплатите при получении."),
+            DialogueTurn(
+                speaker="operator",
+                text="Здравствуйте! Курьерская служба, по поводу доставки вашего заказа.",
+            ),
+            DialogueTurn(
+                speaker="client", text="Здравствуйте, сколько будет стоить доставка?"
+            ),
+            DialogueTurn(
+                speaker="operator",
+                text="Доставка — пятьсот рублей, оплатите при получении.",
+            ),
             DialogueTurn(speaker="client", text="Отлично, договорились."),
         ],
         expected_commitments=[
@@ -389,7 +491,9 @@ CASES: list[GoldCase] = [
 ]
 
 
-def build_timestamps(dialogue: list[DialogueTurn]) -> list[tuple[DialogueTurn, float, float]]:
+def build_timestamps(
+    dialogue: list[DialogueTurn],
+) -> list[tuple[DialogueTurn, float, float]]:
     """Placeholder-таймстампы по длине текста. Заменятся реальными после синтеза."""
     out: list[tuple[DialogueTurn, float, float]] = []
     t = 0.0
@@ -401,7 +505,9 @@ def build_timestamps(dialogue: list[DialogueTurn]) -> list[tuple[DialogueTurn, f
     return out
 
 
-def to_commitment(exp: ExpectedCommitment, quoted: tuple[float, float], quote: str) -> Commitment:
+def to_commitment(
+    exp: ExpectedCommitment, quoted: tuple[float, float], quote: str
+) -> Commitment:
     return Commitment(
         type=exp.type,
         title=exp.title,
@@ -458,7 +564,9 @@ def _main() -> None:
                 "split": "eval",
             }
         )
-        print(f"  {case.id:28s} {case.category:24s} -> {len(case.expected_commitments)} commitments")
+        print(
+            f"  {case.id:28s} {case.category:24s} -> {len(case.expected_commitments)} commitments"
+        )
     (DATA_DIR / "manifest.json").write_text(
         json.dumps(manifest, ensure_ascii=False, indent=2) + "\n", encoding="utf-8"
     )
