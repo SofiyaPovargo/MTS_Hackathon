@@ -1,8 +1,12 @@
+import 'dart:async';
+
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../domain/call.dart';
 import '../domain/enums.dart';
+import '../domain/models.dart';
 import '../domain/ports.dart';
+import '../domain/ws_event.dart';
 import '../infrastructure/api/api_exception.dart';
 import 'providers.dart';
 
@@ -16,11 +20,20 @@ import 'providers.dart';
 class CallController extends Notifier<CallState?> {
   VoiceCallProvider get _voice => ref.read(voiceCallProviderProvider);
   CallApi get _api => ref.read(callApiProvider);
+  CallEventsPort get _events => ref.read(callEventsProvider);
+  AgreementApi get _agreements => ref.read(agreementApiProvider);
+
+  // ignore: cancel_subscriptions — cancelled in [_disconnectLive] / onDispose.
+  StreamSubscription<CallEvent>? _liveSub;
+
+  /// The port we connected through; held so disposal never reads a provider.
+  CallEventsPort? _connectedPort;
 
   @override
   CallState? build() {
     final subscription = _voice.signals.listen(_onSignal);
     ref.onDispose(subscription.cancel);
+    ref.onDispose(_disconnectLive);
     return null;
   }
 
@@ -112,7 +125,10 @@ class CallController extends Notifier<CallState?> {
   }
 
   /// Clears the terminal state so the overlay closes.
-  void clear() => state = null;
+  void clear() {
+    _disconnectLive();
+    state = null;
+  }
 
   // ---- server-driven lifecycle updates ---------------------------------------
   //
@@ -147,6 +163,124 @@ class CallController extends Notifier<CallState?> {
   /// Live analysis is running (backend `in_progress`).
   void markCallActive() => _advance(CallLifecycleStatus.inProgress);
 
+  // ---- agreement actions (live card) ---------------------------------------
+
+  /// Confirms an agreement on the server; the backend creates the task from a
+  /// `confirmed` agreement. Returns an error message, or `null` on success.
+  Future<String?> confirmAgreement(String agreementId) async {
+    try {
+      _upsertAgreement(await _agreements.confirm(agreementId));
+      return null;
+    } on ApiException catch (error) {
+      return error.message;
+    }
+  }
+
+  Future<String?> rejectAgreement(String agreementId) async {
+    try {
+      _upsertAgreement(await _agreements.reject(agreementId));
+      return null;
+    } on ApiException catch (error) {
+      return error.message;
+    }
+  }
+
+  /// Applies the user's edits (`PATCH /agreements/{id}`).
+  Future<String?> editAgreement(String agreementId, AgreementPatch changes) async {
+    try {
+      _upsertAgreement(await _agreements.patch(agreementId, changes));
+      return null;
+    } on ApiException catch (error) {
+      return error.message;
+    }
+  }
+
+  /// Manual entry on the no-consent path (`POST /calls/{id}/agreements`).
+  Future<String?> createManualAgreement(AgreementPatch patch) async {
+    final callId = state?.callId;
+    if (callId == null) return 'Нет активного звонка';
+    try {
+      _upsertAgreement(await _agreements.create(callId: callId, patch: patch));
+      return null;
+    } on ApiException catch (error) {
+      return error.message;
+    }
+  }
+
+  // ---- live WebSocket events -------------------------------------------------
+  //
+  // The backend pushes the four WS events (schema v1). `analysis_started` also
+  // implies consent was granted, so it drives the consent → recording →
+  // analyzing chain; `partial_transcript` appends lines; `agreement_detected`
+  // upserts a card; `call_ended` completes the call.
+
+  void _onCallEvent(CallEvent event) {
+    if (state == null || event.callId != state?.callId) return;
+    switch (event.kind) {
+      case CallEventKind.analysisStarted:
+        markConsentResult(granted: true);
+        markAnalysisStarted();
+      case CallEventKind.partialTranscript:
+        _appendTranscript(TranscriptSegment.fromPayload(event.payload));
+      case CallEventKind.agreementDetected:
+        if (event.payload.isNotEmpty) {
+          _upsertAgreement(Agreement.fromJson(event.payload));
+        }
+      case CallEventKind.callEnded:
+        _endAs(CallLifecycleStatus.completed);
+    }
+  }
+
+  Future<void> _connectLive() async {
+    final callId = state?.callId;
+    if (callId == null || state == null || !state!.recordingEnabled) return;
+    if (_liveSub != null) return;
+    final events = _events;
+    try {
+      await events.connect(callId);
+      _connectedPort = events;
+      _liveSub = events.events.listen(
+        _onCallEvent,
+        onError: (_) {
+          // The live feed is best-effort; the board stays usable without it.
+          _liveSub = null;
+        },
+        onDone: () => _liveSub = null,
+      );
+    } on Object {
+      _liveSub = null;
+    }
+  }
+
+  void _disconnectLive() {
+    final sub = _liveSub;
+    _liveSub = null;
+    final events = _connectedPort;
+    _connectedPort = null;
+    if (sub == null && events == null) return;
+    unawaited(sub?.cancel());
+    unawaited(events?.disconnect());
+  }
+
+  void _appendTranscript(TranscriptSegment segment) {
+    final current = state;
+    if (current == null) return;
+    state = current.copyWith(
+      transcript: <TranscriptSegment>[...current.transcript, segment],
+    );
+  }
+
+  void _upsertAgreement(Agreement agreement) {
+    final current = state;
+    if (current == null) return;
+    final others = current.agreements
+        .where((a) => a.id != agreement.id)
+        .toList();
+    state = current.copyWith(
+      agreements: <Agreement>[agreement, ...others],
+    );
+  }
+
   /// Dev-only helper: synthesize an incoming call when the provider supports it
   /// (the mock does). Feature code stays on this controller.
   void simulateIncomingCall({required String phone, String? name}) {
@@ -180,6 +314,10 @@ class CallController extends Notifier<CallState?> {
         } else {
           _advance(CallLifecycleStatus.inProgress);
         }
+        // Subscribe to the live feed so `analysis_started`/transcript/agreements
+        // reach the call card as soon as they exist. Replay covers anything that
+        // happened before the handshake.
+        unawaited(_connectLive());
       case CallSignalKind.ended:
         _endAs(CallLifecycleStatus.completed);
       case CallSignalKind.dropped:
@@ -205,6 +343,7 @@ class CallController extends Notifier<CallState?> {
       if (!canTransitionCall(current.status, target)) return;
     }
     state = current.copyWith(status: target, endedAt: DateTime.now());
+    _disconnectLive();
   }
 
   void _advance(CallLifecycleStatus target) {

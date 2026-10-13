@@ -37,3 +37,21 @@ String consentStatusLabel(ConsentStatus? status) => switch (status) {
       ConsentStatus.denied => 'Запись отключена',
       ConsentStatus.withdrawn => 'Согласие отозвано',
     };
+
+String agreementStatusLabel(AgreementStatus status) => switch (status) {
+      AgreementStatus.detected => 'Обнаружено',
+      AgreementStatus.requiresReview => 'Требует проверки',
+      AgreementStatus.needsClarification => 'Нужно уточнение',
+      AgreementStatus.confirmed => 'Подтверждено',
+      AgreementStatus.rejected => 'Отклонено',
+    };
+
+String agreementOwnerLabel(AgreementOwner owner) => switch (owner) {
+      AgreementOwner.user => 'Я',
+      AgreementOwner.counterparty => 'Собеседник',
+      AgreementOwner.unknown => 'Не указано',
+    };
+
+/// Confidence as a percent with one decimal place ("92.5%").
+String formatConfidence(double confidence) =>
+    '${(confidence * 100).toStringAsFixed(1)}%';

@@ -2,29 +2,53 @@ import 'package:agreement_capture/application/providers.dart';
 import 'package:agreement_capture/domain/call.dart';
 import 'package:agreement_capture/domain/consent.dart';
 import 'package:agreement_capture/domain/enums.dart';
+import 'package:agreement_capture/domain/models.dart';
+import 'package:agreement_capture/domain/ws_event.dart';
 import 'package:agreement_capture/infrastructure/api/api_exception.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 import '../support/fakes.dart';
 
-({ProviderContainer container, FakeVoiceCallProvider voice, FakeCallApi api})
-    buildContainer({
+({
+  ProviderContainer container,
+  FakeVoiceCallProvider voice,
+  FakeCallApi api,
+  FakeCallEventsPort events,
+}) buildContainer({
   bool permission = true,
   ApiException? apiError,
+  ApiException? eventsError,
+  ApiException? agreementError,
   AppConsent consent = AppConsent.undecided,
 }) {
   final voice = FakeVoiceCallProvider(microphoneGranted: permission);
   final api = FakeCallApi(error: apiError);
+  final events = FakeCallEventsPort(error: eventsError);
+  final agreementApi = FakeAgreementApi(error: agreementError);
   final container = ProviderContainer(
     overrides: <Override>[
       voiceCallProviderProvider.overrideWithValue(voice),
       callApiProvider.overrideWithValue(api),
       consentStoreProvider.overrideWithValue(InMemoryConsentStore(consent)),
       consentApiProvider.overrideWithValue(FakeConsentApi()),
+      // Always fake the live feed: the real client opens a socket.
+      callEventsProvider.overrideWithValue(events),
+      agreementApiProvider.overrideWithValue(agreementApi),
     ],
   );
-  return (container: container, voice: voice, api: api);
+  return (container: container, voice: voice, api: api, events: events);
+}
+
+const testCallId = '55555555-5555-5555-5555-555555555555';
+
+CallEvent testEvent(String event, {Map<String, dynamic> payload = const {}}) {
+  return CallEvent(
+    version: 1,
+    kind: CallEventKind.fromWire(event),
+    callId: testCallId,
+    payload: payload,
+  );
 }
 
 void main() {
@@ -308,5 +332,312 @@ void main() {
     final call = scope.container.read(callControllerProvider);
     expect(call?.status, CallLifecycleStatus.consentNotice);
     expect(call?.recordingEnabled, isTrue);
+  });
+
+  test('live: the feed connects for a recorded call and streams segments',
+      () async {
+    final scope = buildContainer(
+      consent: const AppConsent(status: ConsentStatus.granted, synced: true),
+    );
+    addTearDown(scope.container.dispose);
+    final controller = scope.container.read(callControllerProvider.notifier);
+
+    await controller.startOutgoing('+79000000002');
+    scope.voice.emit(const CallSignal(kind: CallSignalKind.answered));
+    await pumpEventQueue();
+    await pumpEventQueue();
+    expect(scope.events.connected, <String>[testCallId]);
+
+    scope.events.emit(testEvent('partial_transcript', payload: {
+      'speaker': 'user',
+      'text': 'оплачу до пятницы',
+      'start': 12.5,
+      'end': 18.0,
+    }));
+    scope.events.emit(testEvent('partial_transcript', payload: {
+      'speaker': 'counterparty',
+      'text': 'отлично, жду',
+      'start': 19.0,
+      'end': 21.0,
+    }));
+    await pumpEventQueue();
+
+    final transcript =
+        scope.container.read(callControllerProvider)?.transcript;
+    expect(transcript, hasLength(2));
+    expect(transcript?.first.text, 'оплачу до пятницы');
+    expect(transcript?.last.speaker, 'counterparty');
+  });
+
+  test('live: analysis_started drives the consent → recording → analyzing chain',
+      () async {
+    final scope = buildContainer(
+      consent: const AppConsent(status: ConsentStatus.granted, synced: true),
+    );
+    addTearDown(scope.container.dispose);
+    final controller = scope.container.read(callControllerProvider.notifier);
+
+    await controller.startOutgoing('+79000000002');
+    scope.voice.emit(const CallSignal(kind: CallSignalKind.answered));
+    await pumpEventQueue();
+    expect(
+      scope.container.read(callControllerProvider)?.status,
+      CallLifecycleStatus.consentNotice,
+    );
+
+    scope.events.emit(testEvent('analysis_started'));
+    await pumpEventQueue();
+
+    expect(
+      scope.container.read(callControllerProvider)?.status,
+      CallLifecycleStatus.analyzing,
+    );
+    expect(
+      scope.container.read(callControllerProvider)?.recordingEnabled,
+      isTrue,
+    );
+  });
+
+  test('live: agreement_detected upserts cards, newest first, no duplicates',
+      () async {
+    final scope = buildContainer(
+      consent: const AppConsent(status: ConsentStatus.granted, synced: true),
+    );
+    addTearDown(scope.container.dispose);
+    final controller = scope.container.read(callControllerProvider.notifier);
+
+    await controller.startOutgoing('+79000000002');
+    scope.voice.emit(const CallSignal(kind: CallSignalKind.answered));
+    await pumpEventQueue();
+    await pumpEventQueue();
+
+    scope.events.emit(testEvent('agreement_detected', payload: {
+      'id': 'agr-1',
+      'call_id': testCallId,
+      'type': 'payment',
+      'title': 'Оплатить счёт',
+      'owner': 'user',
+      'due_date': null,
+      'due_time': null,
+      'source_quote': 'оплачу до пятницы',
+      'audio_start': 12.5,
+      'audio_end': 18.0,
+      'confidence': 0.92,
+      'status': 'detected',
+    }));
+    scope.events.emit(testEvent('agreement_detected', payload: {
+      'id': 'agr-2',
+      'call_id': testCallId,
+      'type': 'follow_up',
+      'title': 'Перезвонить завтра',
+      'owner': 'counterparty',
+      'due_date': null,
+      'due_time': null,
+      'source_quote': 'перезвоню завтра',
+      'audio_start': 30.0,
+      'audio_end': 34.0,
+      'confidence': 0.81,
+      'status': 'detected',
+    }));
+    await pumpEventQueue();
+
+    var agreements = scope.container.read(callControllerProvider)?.agreements;
+    expect(agreements, hasLength(2));
+    expect(agreements?.first.id, 'agr-2');
+
+    // Re-delivery of the same agreement replaces the card, not duplicates it.
+    scope.events.emit(testEvent('agreement_detected', payload: {
+      'id': 'agr-1',
+      'call_id': testCallId,
+      'type': 'payment',
+      'title': 'Оплатить счёт (обновлено)',
+      'owner': 'user',
+      'due_date': '2026-10-15',
+      'due_time': null,
+      'source_quote': 'оплачу до пятницы',
+      'audio_start': 12.5,
+      'audio_end': 18.0,
+      'confidence': 0.97,
+      'status': 'detected',
+    }));
+    await pumpEventQueue();
+
+    agreements = scope.container.read(callControllerProvider)?.agreements;
+    expect(agreements, hasLength(2));
+    expect(agreements?.first.id, 'agr-1');
+    expect(agreements?.first.title, 'Оплатить счёт (обновлено)');
+    expect(agreements?.first.dueDate, DateTime(2026, 10, 15));
+  });
+
+  test('live: call_ended completes the call and disconnects', () async {
+    final scope = buildContainer(
+      consent: const AppConsent(status: ConsentStatus.granted, synced: true),
+    );
+    addTearDown(scope.container.dispose);
+    final controller = scope.container.read(callControllerProvider.notifier);
+
+    await controller.startOutgoing('+79000000002');
+    scope.voice.emit(const CallSignal(kind: CallSignalKind.answered));
+    await pumpEventQueue();
+    await pumpEventQueue();
+
+    scope.events.emit(testEvent('call_ended'));
+    await pumpEventQueue();
+
+    expect(
+      scope.container.read(callControllerProvider)?.status,
+      CallLifecycleStatus.completed,
+    );
+    expect(scope.events.disconnectCalls, greaterThanOrEqualTo(1));
+  });
+
+  test('live: events for another call are ignored', () async {
+    final scope = buildContainer(
+      consent: const AppConsent(status: ConsentStatus.granted, synced: true),
+    );
+    addTearDown(scope.container.dispose);
+    final controller = scope.container.read(callControllerProvider.notifier);
+
+    await controller.startOutgoing('+79000000002');
+    scope.voice.emit(const CallSignal(kind: CallSignalKind.answered));
+    await pumpEventQueue();
+    await pumpEventQueue();
+
+    scope.events.emit(const CallEvent(
+      version: 1,
+      kind: CallEventKind.partialTranscript,
+      callId: '00000000-0000-0000-0000-000000000000',
+      payload: <String, dynamic>{'text': 'чужой сегмент'},
+    ));
+    await pumpEventQueue();
+
+    expect(scope.container.read(callControllerProvider)?.transcript, isEmpty);
+  });
+
+  test('live: recording-off or UI-only calls never open the feed', () async {
+    final scope = buildContainer();
+    addTearDown(scope.container.dispose);
+    final controller = scope.container.read(callControllerProvider.notifier);
+
+    // App consent off → ordinary call.
+    await controller.startOutgoing('+79000000002');
+    scope.voice.emit(const CallSignal(kind: CallSignalKind.answered));
+    await pumpEventQueue();
+    await pumpEventQueue();
+    expect(scope.events.connected, isEmpty);
+
+    // Incoming mock has no backend id → nothing to subscribe to.
+    scope.voice.simulateIncoming(phone: '+79000000003');
+    await pumpEventQueue();
+    await controller.answerIncoming();
+    await pumpEventQueue();
+    expect(scope.events.connected, isEmpty);
+  });
+
+  test('live: a failed handshake leaves the call usable (no crash)', () async {
+    final scope = buildContainer(
+      eventsError: const ApiException(ApiErrorKind.network, 'no network'),
+      consent: const AppConsent(status: ConsentStatus.granted, synced: true),
+    );
+    addTearDown(scope.container.dispose);
+    final controller = scope.container.read(callControllerProvider.notifier);
+
+    await controller.startOutgoing('+79000000002');
+    scope.voice.emit(const CallSignal(kind: CallSignalKind.answered));
+    await pumpEventQueue();
+    await pumpEventQueue();
+
+    expect(scope.events.connected, isEmpty);
+    expect(
+      scope.container.read(callControllerProvider)?.status,
+      CallLifecycleStatus.consentNotice,
+    );
+    expect(scope.container.read(callControllerProvider), isNotNull);
+  });
+
+  test('agreements: confirm, reject, edit and manual create round-trip',
+      () async {
+    final scope = buildContainer(
+      consent: const AppConsent(status: ConsentStatus.granted, synced: true),
+    );
+    addTearDown(scope.container.dispose);
+    final controller = scope.container.read(callControllerProvider.notifier);
+
+    await controller.startOutgoing('+79000000002');
+
+    // Confirm a detected agreement (server flips the status → task is created).
+    await controller.confirmAgreement('33333333-3333-3333-3333-333333333333');
+    expect(
+      scope.container.read(callControllerProvider)?.agreements.single.status,
+      AgreementStatus.confirmed,
+    );
+
+    // Reject another one.
+    await controller.rejectAgreement('77777777-7777-7777-7777-777777777777');
+    expect(
+      scope.container
+          .read(callControllerProvider)
+          ?.agreements
+          .firstWhere((a) => a.id == '77777777-7777-7777-7777-777777777777')
+          .status,
+      AgreementStatus.rejected,
+    );
+
+    // Edit a card.
+    await controller.editAgreement(
+      '33333333-3333-3333-3333-333333333333',
+      const AgreementPatch(title: 'Оплатить счёт до 20-го'),
+    );
+    expect(
+      scope.container
+          .read(callControllerProvider)
+          ?.agreements
+          .firstWhere((a) => a.id == '33333333-3333-3333-3333-333333333333')
+          .title,
+      'Оплатить счёт до 20-го',
+    );
+
+    // Manual entry (no-consent path) creates a card on the server.
+    expect(
+      await controller.createManualAgreement(
+        const AgreementPatch(title: 'Встреча в пятницу', type: 'meeting'),
+      ),
+      isNull,
+    );
+    final cards = scope.container.read(callControllerProvider)?.agreements;
+    expect(cards?.first.id, 'created-1');
+    expect(cards?.first.callId, testCallId);
+    expect(cards?.first.title, 'Встреча в пятницу');
+    expect(cards?.first.type, 'meeting');
+  });
+
+  test('agreements: manual create requires an active call', () async {
+    final scope = buildContainer();
+    addTearDown(scope.container.dispose);
+    final controller = scope.container.read(callControllerProvider.notifier);
+
+    expect(
+      await controller.createManualAgreement(
+        const AgreementPatch(title: 'Встреча'),
+      ),
+      'Нет активного звонка',
+    );
+  });
+
+  test('agreements: a server error is surfaced without touching the card',
+      () async {
+    final scope = buildContainer(
+      agreementError: const ApiException(ApiErrorKind.server, 'boom'),
+      consent: const AppConsent(status: ConsentStatus.granted, synced: true),
+    );
+    addTearDown(scope.container.dispose);
+    final controller = scope.container.read(callControllerProvider.notifier);
+
+    await controller.startOutgoing('+79000000002');
+    expect(
+      await controller.confirmAgreement('33333333-3333-3333-3333-333333333333'),
+      'boom',
+    );
+    expect(scope.container.read(callControllerProvider)?.agreements, isEmpty);
   });
 }

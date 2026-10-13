@@ -5,6 +5,7 @@ import '../domain/call.dart';
 import '../domain/consent.dart';
 import '../domain/models.dart';
 import '../domain/ports.dart';
+import '../infrastructure/api/agreement_api.dart';
 import '../infrastructure/api/api_client.dart';
 import '../infrastructure/api/auth_api.dart';
 import '../infrastructure/api/board_api.dart';
@@ -20,6 +21,7 @@ import '../infrastructure/db/sync_state_store.dart';
 import '../infrastructure/repositories/contacts_source.dart';
 import '../infrastructure/sync/sync_engine.dart';
 import '../infrastructure/voice/mock_voice_provider.dart';
+import '../infrastructure/ws/ws_call_events.dart';
 import 'auth_controller.dart';
 import 'board_controller.dart';
 import 'call_controller.dart';
@@ -84,6 +86,20 @@ final Provider<CallApi> callApiProvider =
 
 final Provider<ConsentApi> consentApiProvider =
     Provider<ConsentApi>((ref) => HttpConsentApi(client: ref.watch(apiClientProvider)));
+
+final Provider<AgreementApi> agreementApiProvider = Provider<AgreementApi>(
+  (ref) => HttpAgreementApi(client: ref.watch(apiClientProvider)),
+);
+
+/// Live per-call events (`/api/ws/calls/{call_id}`). The access token comes from
+/// the session store, exactly like the REST clients.
+final Provider<CallEventsPort> callEventsProvider = Provider<CallEventsPort>(
+  (ref) => WebSocketCallEvents(
+    baseUrl: ref.watch(appConfigProvider).baseUrl,
+    accessToken: () async =>
+        (await ref.read(sessionStoreProvider).read())?.accessToken,
+  ),
+);
 
 // -- voice provider ----------------------------------------------------------
 

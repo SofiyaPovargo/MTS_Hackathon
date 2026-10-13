@@ -233,6 +233,80 @@ class Agreement {
         'created_at': createdAt?.toIso8601String(),
         'updated_at': updatedAt?.toIso8601String(),
       };
+
+  Agreement copyWith({
+    String? id,
+    String? callId,
+    AgreementOwner? owner,
+    String? type,
+    String? title,
+    String? object,
+    DateTime? dueDate,
+    String? dueTime,
+    double? amount,
+    String? currency,
+    String? sourceQuote,
+    double? audioStart,
+    double? audioEnd,
+    double? confidence,
+    AgreementStatus? status,
+    int? version,
+    DateTime? createdAt,
+    DateTime? updatedAt,
+  }) {
+    return Agreement(
+      id: id ?? this.id,
+      callId: callId ?? this.callId,
+      owner: owner ?? this.owner,
+      type: type ?? this.type,
+      title: title ?? this.title,
+      object: object ?? this.object,
+      dueDate: dueDate ?? this.dueDate,
+      dueTime: dueTime ?? this.dueTime,
+      amount: amount ?? this.amount,
+      currency: currency ?? this.currency,
+      sourceQuote: sourceQuote ?? this.sourceQuote,
+      audioStart: audioStart ?? this.audioStart,
+      audioEnd: audioEnd ?? this.audioEnd,
+      confidence: confidence ?? this.confidence,
+      status: status ?? this.status,
+      version: version ?? this.version,
+      createdAt: createdAt ?? this.createdAt,
+      updatedAt: updatedAt ?? this.updatedAt,
+    );
+  }
+}
+
+/// Editable fields of an agreement; also the manual-create payload. `null` means
+/// "not provided" (PATCH semantics — the server only applies present fields).
+class AgreementPatch {
+  const AgreementPatch({
+    this.type,
+    this.title,
+    this.object,
+    this.owner,
+    this.dueDate,
+    this.amount,
+    this.currency,
+  });
+
+  final String? type;
+  final String? title;
+  final String? object;
+  final AgreementOwner? owner;
+  final DateTime? dueDate;
+  final double? amount;
+  final String? currency;
+
+  Map<String, Object?> toJson() => <String, Object?>{
+        if (type != null) 'type': type,
+        if (title != null) 'title': title,
+        if (object != null) 'object': object,
+        if (owner != null) 'owner': owner!.wire,
+        if (dueDate != null) 'due_date': formatDateOnly(dueDate),
+        if (amount != null) 'amount': amount,
+        if (currency != null) 'currency': currency,
+      };
 }
 
 class Call {

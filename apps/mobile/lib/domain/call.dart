@@ -1,4 +1,6 @@
 import 'enums.dart';
+import 'models.dart';
+import 'ws_event.dart';
 
 /// A provider signal (voice SDK / VoIP event) the [CallController] reacts to.
 ///
@@ -39,6 +41,8 @@ class CallState {
     this.startedAt,
     this.answeredAt,
     this.endedAt,
+    this.transcript = const <TranscriptSegment>[],
+    this.agreements = const <Agreement>[],
   });
 
   final CallLifecycleStatus status;
@@ -66,6 +70,13 @@ class CallState {
   final DateTime? answeredAt;
   final DateTime? endedAt;
 
+  /// Live transcript lines (`partial_transcript` events), in order.
+  final List<TranscriptSegment> transcript;
+
+  /// Agreements detected live (`agreement_detected`), newest first. The local
+  /// copy is replaced by the server response after every user action.
+  final List<Agreement> agreements;
+
   bool get isIncoming => direction == CallDirection.inbound;
   bool get isTerminal => status.isTerminal;
 
@@ -91,6 +102,8 @@ class CallState {
     bool? participantDeclined,
     DateTime? answeredAt,
     DateTime? endedAt,
+    List<TranscriptSegment>? transcript,
+    List<Agreement>? agreements,
   }) {
     return CallState(
       status: status ?? this.status,
@@ -105,6 +118,8 @@ class CallState {
       startedAt: startedAt,
       answeredAt: answeredAt ?? this.answeredAt,
       endedAt: endedAt ?? this.endedAt,
+      transcript: transcript ?? this.transcript,
+      agreements: agreements ?? this.agreements,
     );
   }
 }
