@@ -29,7 +29,6 @@ into one object once the last one arrives, then deleted.
 from __future__ import annotations
 
 import logging
-import mimetypes
 import uuid
 from typing import TypedDict, cast
 
@@ -47,6 +46,7 @@ from app.infrastructure.db.models import Call, CallAudio, User
 from app.infrastructure.storage import (
     StorageError,
     StoragePort,
+    audio_suffix,
     chunk_key,
     key_from_url,
     new_audio_key,
@@ -62,25 +62,6 @@ LEGS = ("operator", "client")
 
 #: Upload slot for the mixed stream (``role`` is ``None`` on the wire).
 MIXED = "mixed"
-
-#: Container extensions per content type. The ML decoder reads the object with
-#: libsndfile, so wav/ogg/opus/flac are the practically supported containers;
-#: anything else still lands in storage but as a generic ``.bin`` object.
-_SUFFIXES = {
-    "audio/wav": ".wav",
-    "audio/x-wav": ".wav",
-    "audio/wave": ".wav",
-    "audio/ogg": ".ogg",
-    "audio/opus": ".ogg",
-    "audio/flac": ".flac",
-    "audio/x-flac": ".flac",
-    "audio/mpeg": ".mp3",
-    "audio/mp4": ".m4a",
-    "audio/x-m4a": ".m4a",
-    "audio/webm": ".webm",
-    "audio/aac": ".aac",
-    "audio/3gpp": ".3gp",
-}
 
 
 class UploadPart(TypedDict):
@@ -103,13 +84,6 @@ class UploadSession(TypedDict):
 def normalize_content_type(content_type: str | None) -> str:
     """Strip parameters and case from a ``Content-Type`` header value."""
     return (content_type or "application/octet-stream").split(";", 1)[0].strip().lower()
-
-
-def _suffix(content_type: str) -> str:
-    if content_type in _SUFFIXES:
-        return _SUFFIXES[content_type]
-    guessed = mimetypes.guess_extension(content_type)
-    return guessed if guessed and guessed.startswith(".") else ".bin"
 
 
 def parse_content_range(value: str) -> tuple[int, int, int]:
@@ -196,7 +170,7 @@ class AudioIngestService:
         dropped = self._drop_session(audio, role)
         superseded = self._current_urls(audio)
 
-        key = new_audio_key(str(call.id), _suffix(upload.content_type))
+        key = new_audio_key(str(call.id), audio_suffix(upload.content_type))
         url = await self._storage.put_bytes(key, upload.data, upload.content_type)
         self._apply_object(
             audio, role=role, url=url, content_type=upload.content_type, duration_sec=duration_sec
@@ -307,7 +281,7 @@ class AudioIngestService:
         data = b"".join([await self._storage.get_bytes(part["key"]) for part in parts])
 
         superseded = self._current_urls(audio)
-        key = new_audio_key(str(call.id), _suffix(content_type))
+        key = new_audio_key(str(call.id), audio_suffix(content_type))
         url = await self._storage.put_bytes(key, data, content_type)
         self._apply_object(
             audio, role=role, url=url, content_type=content_type, duration_sec=duration_sec

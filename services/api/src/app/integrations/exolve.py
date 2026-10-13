@@ -32,6 +32,7 @@ import httpx
 
 from app.config import Settings
 from app.domain.enums import CallEvent
+from app.integrations.recording import ProviderRecording
 
 # Exolve progress-notification type -> domain call event. ``h`` (bridge status)
 # and ``crr`` (record ready) carry no domain transition yet; they are surfaced
@@ -58,6 +59,9 @@ class ExolveCallEvent:
     event: CallEvent | None = None
     known: bool = True
     raw: dict[str, Any] = field(default_factory=dict)
+    #: Call Record id from a ``crr`` notification; the finished audio is fetched
+    #: with it (``GET /statistics/download/{uid}``).
+    record_uid: str | None = None
 
 
 @dataclass(frozen=True)
@@ -100,6 +104,7 @@ def parse_call_event(payload: dict[str, Any]) -> ExolveCallEvent:
     caller can log or handle it later without losing information.
     """
     kind = str(payload.get("type", ""))
+    uid = payload.get("uid")
     return ExolveCallEvent(
         exolve_type=kind,
         call_sid=str(payload.get("call_sid", "")),
@@ -110,6 +115,7 @@ def parse_call_event(payload: dict[str, Any]) -> ExolveCallEvent:
         event=EXOLVE_LIFECYCLE_EVENTS.get(kind),
         known=kind in EXOLVE_EVENT_TYPES,
         raw=dict(payload),
+        record_uid=str(uid) if uid not in (None, "") else None,
     )
 
 
@@ -197,10 +203,31 @@ class ExolveCallRecordClient:
         response.raise_for_status()
         return list(response.json().get("records", []))
 
-    async def download_record(self, uid: str) -> bytes:
+    async def fetch_recording(self, uid: str) -> ProviderRecording:
+        """Download one finished recording; implements ``CallRecordingPort``.
+
+        The download URL is built from the configured API base and the ``uid``
+        from the ``crr`` notification — never from the notification's ``path``
+        field, so a forged callback cannot point us at an arbitrary host.
+        """
         response = await self._client.get(f"/statistics/download/{uid}")
         response.raise_for_status()
-        return response.content
+        content_type = response.headers.get("content-type", "").split(";", 1)[0].strip()
+        return ProviderRecording(
+            data=response.content,
+            # Exolve does not document the container; recordings are mp3 in
+            # practice and the ML decoder keys off the object's extension.
+            content_type=content_type or "audio/mpeg",
+        )
+
+
+def exolve_recording_client(settings: Settings) -> ExolveCallRecordClient | None:
+    """Recording port for the worker, or ``None`` without a configured key."""
+    if not settings.exolve_api_key:
+        return None
+    return ExolveCallRecordClient(
+        base_url=settings.exolve_api_base_url, api_key=settings.exolve_api_key
+    )
 
 
 class ExolveVoiceProvider:

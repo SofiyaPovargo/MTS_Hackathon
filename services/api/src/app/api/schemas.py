@@ -146,6 +146,9 @@ class ExolveEventRequest(BaseModel):
     from_: str | None = Field(default=None, alias="from")
     to: str | None = None
     record_call: bool = False
+    # ``crr`` only: the Call Record id whose audio is fetched by the worker.
+    uid: str | int | None = None
+    record_duration: int | None = None
 
 
 class ExolveEventAck(BaseModel):

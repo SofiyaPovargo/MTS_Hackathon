@@ -22,6 +22,7 @@ from app.services.auth import AuthService
 from app.services.call_session import CallSessionService
 from app.services.consent import ConsentService
 from app.services.manager import ManagerDashboardService
+from app.services.provider_recording import ProviderRecordingService
 from app.services.schedule import ScheduleService
 from app.services.sync import SyncService
 from app.services.task import TaskService
@@ -144,10 +145,29 @@ def get_auth_service(
     return AuthService(session, cache, settings)
 
 
+def get_provider_recording_service(
+    request: Request,
+    session: AsyncSession = Depends(get_session),
+    settings: Settings = Depends(get_settings),
+) -> ProviderRecordingService:
+    """API-side view: records the ``crr`` record id and queues the worker job.
+
+    The download itself runs in a worker (an Exolve callback must be answered
+    quickly), so the API instance needs no provider HTTP client.
+    """
+    return ProviderRecordingService(
+        session,
+        settings=settings,
+        storage=request.app.state.storage,
+        analysis=request.app.state.analysis_queue,
+    )
+
+
 def get_exolve_webhook_service(
     request: Request,
     session: AsyncSession = Depends(get_session),
     calls: CallSessionService = Depends(get_call_session_service),
+    recordings: ProviderRecordingService = Depends(get_provider_recording_service),
     settings: Settings = Depends(get_settings),
 ) -> ExolveWebhookService:
-    return ExolveWebhookService(session, settings=settings, calls=calls)
+    return ExolveWebhookService(session, settings=settings, calls=calls, recordings=recordings)

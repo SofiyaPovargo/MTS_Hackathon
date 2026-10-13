@@ -26,8 +26,10 @@ from redis.asyncio import Redis
 
 from app.config import Settings, get_settings
 from app.infrastructure.cache import Cache
+from app.infrastructure.db import repositories
 from app.infrastructure.db.session import create_engine_and_factory
 from app.infrastructure.storage import MinioStorage
+from app.integrations.exolve import exolve_recording_client
 from app.ml.asr.ports import StreamingASRPort
 from app.ml.diarization.ports import DiarizationPort
 from app.ml.extraction.ports import ExtractionPort
@@ -36,6 +38,7 @@ from app.ml.pipeline import extract_and_store, extract_incremental, transcribe_a
 from app.ml.vad.ports import VadPort
 from app.services.data_deletion import delete_user_data, purge_expired_audio
 from app.services.events import EventHub
+from app.services.provider_recording import ProviderRecordingService
 
 logger = logging.getLogger(__name__)
 
@@ -128,6 +131,42 @@ def run_llm_extraction(call_id: str) -> dict[str, object]:
     """worker-ai: transcript -> validated agreements + ``agreement_detected``."""
     extracted = asyncio.run(_run_llm_extraction(call_id))
     return {"call_id": call_id, "job": "ai", "agreements": extracted}
+
+
+@celery_app.task(queue="asr", name="download_recording")
+def download_recording(call_id: str) -> dict[str, object]:
+    """worker-asr: fetch the provider's finished recording into object storage.
+
+    Exolve ``crr`` only announces the file (plan.md §11.1); this job downloads
+    it and then hands off to ASR, which is idempotent by ``call_id``.
+    """
+    stored = asyncio.run(_download_recording(call_id))
+    if stored:
+        process_asr.delay(call_id)
+    return {"call_id": call_id, "job": "recording", "stored": stored}
+
+
+async def _download_recording(call_id: str) -> bool:
+    settings = get_settings()
+    call_uuid = uuid.UUID(call_id)
+    engine, factory = create_engine_and_factory(settings.database_url)
+    storage = MinioStorage(settings)
+    recordings = exolve_recording_client(settings)
+    try:
+        async with factory() as session:
+            call = await repositories.get_call(session, call_uuid)
+            if call is None:
+                return False
+            service = ProviderRecordingService(
+                session, settings=settings, storage=storage, recordings=recordings
+            )
+            stored = await service.fetch_and_store(call)
+            await session.commit()
+            return stored
+    finally:
+        if recordings is not None:
+            await recordings.aclose()
+        await engine.dispose()
 
 
 async def _process_asr(call_id: str) -> bool:

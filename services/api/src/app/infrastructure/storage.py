@@ -8,6 +8,7 @@ container filesystem.
 from __future__ import annotations
 
 import asyncio
+import mimetypes
 import uuid
 from collections.abc import Callable
 from datetime import UTC, datetime, timedelta
@@ -18,6 +19,25 @@ from botocore.client import Config as BotoConfig
 from botocore.exceptions import BotoCoreError, ClientError
 
 from app.config import Settings
+
+#: Container extension per audio content type. The ML decoder reads the object
+#: with libsndfile, so wav/ogg/opus/flac are the practically supported
+#: containers; anything else still lands in storage but as a generic ``.bin``.
+_AUDIO_SUFFIXES = {
+    "audio/wav": ".wav",
+    "audio/x-wav": ".wav",
+    "audio/wave": ".wav",
+    "audio/ogg": ".ogg",
+    "audio/opus": ".ogg",
+    "audio/flac": ".flac",
+    "audio/x-flac": ".flac",
+    "audio/mpeg": ".mp3",
+    "audio/mp4": ".m4a",
+    "audio/x-m4a": ".m4a",
+    "audio/webm": ".webm",
+    "audio/aac": ".aac",
+    "audio/3gpp": ".3gp",
+}
 
 
 class StorageError(RuntimeError):
@@ -140,6 +160,14 @@ def chunk_key(call_id: str, upload_id: str, index: int) -> str:
     that already reached storage.
     """
     return f"calls/{call_id}/audio/{upload_id}/part-{index:05d}"
+
+
+def audio_suffix(content_type: str) -> str:
+    """Object extension for an audio content type (``audio/mpeg`` → ``.mp3``)."""
+    if content_type in _AUDIO_SUFFIXES:
+        return _AUDIO_SUFFIXES[content_type]
+    guessed = mimetypes.guess_extension(content_type)
+    return guessed if guessed and guessed.startswith(".") else ".bin"
 
 
 def key_from_url(url: str) -> str:

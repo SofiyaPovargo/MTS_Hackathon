@@ -138,7 +138,7 @@ headers)
 | method | path                    | notes                                |
 | ------ | ----------------------- | ------------------------------------ |
 | POST   | `/voice/exolve/control` | inbound call control: route the call to the app user (`EXOLVE_SIP_ROUTES`), play the consent notice (`file_to_A`), point events at our `event_URL`. JSON-RPC body; unknown `sip_id` → `error`; idempotent per `call_sid` |
-| POST   | `/voice/exolve/events`  | progress notification `b/o/s/e/h/crr`: `b/o/s/e` drive the call lifecycle, others are acknowledged. Call resolved by `client_id` or `call_sid` |
+| POST   | `/voice/exolve/events`  | progress notification `b/o/s/e/h/crr`: `b/o/s/e` drive the call lifecycle, `crr` remembers the record id and queues the download, the rest are acknowledged. Call resolved by `client_id` or `call_sid` |
 
 Agreements
 
@@ -260,9 +260,27 @@ Exolve at `POST /voice/exolve/events`. The body echoes our call id as
 `client_id`, which — together with `Call.external_id` — correlates every later
 notification back to the call. `POST /voice/exolve/events` maps `b/o/s/e` to the
 *same* `CallSessionService` the mock provider uses, so the
-`answered`+consent recording gate applies unchanged; `h`, `crr` and unknown
-types are acknowledged without a transition. Both endpoints are signed with
+`answered`+consent recording gate applies unchanged; `h` and unknown types are
+acknowledged without a transition. Both endpoints are signed with
 `VOICE_WEBHOOK_SECRET`; the callback base is `PUBLIC_BASE_URL`.
+
+**Provider recording download** (`services/provider_recording.py`). Exolve
+records at the SIP-resource level and announces the finished file with `crr`
+(`uid` = the Call Record id). The webhook only parks that id on the
+`call_audio` row (`provider://exolve/<uid>`) and queues `download_recording`;
+the worker then pulls `GET /statistics/download/{uid}` and stores the object in
+MinIO before handing off to ASR. Two rules hold:
+
+- the download happens only for a call our own flow recorded
+  (`recording_started_at`, i.e. `answered` + consent) — a `crr` for a
+  non-consented call is audited as `recording.rejected` and its audio is never
+  fetched or stored;
+- it is idempotent: audio already in storage is left alone, so a client upload
+  wins over the provider copy and a re-delivered `crr` does not re-download.
+
+The download URL is built from `EXOLVE_API_BASE_URL` + the record id, never from
+the notification's `path` field, so a forged callback cannot redirect the fetch.
+Without `EXOLVE_API_KEY` the worker logs and skips the job.
 
 **Client audio ingest** (`services/audio_ingest.py`). The app POSTs the raw
 recording (`Content-Type: audio/*`) to `POST /calls/{id}/audio`; the body is the
@@ -323,15 +341,19 @@ through pyannote; the first speaker becomes `operator`, the second `client`.
 
 **Production pipeline** (`pipeline.py`, run by the workers):
 
-1. `worker-asr` (`process_asr`) — load the recording from MinIO/S3, transcribe,
+1. `worker-asr` (`download_recording`) — when Exolve announces a finished
+   recording (`crr`), fetch it through the Call Record API and store it in
+   MinIO, then enqueue `process_asr`. Skipped when the audio is already in
+   storage or the call was not recorded with consent.
+2. `worker-asr` (`process_asr`) — load the recording from MinIO/S3, transcribe,
    persist the segmented transcript into `transcripts` (1:1 with the call),
    publish `partial_transcript` events, then enqueue `worker-ai`.
-2. `worker-ai` (`run_llm_extraction`) — LLM extraction + rule-based validation,
+3. `worker-ai` (`run_llm_extraction`) — LLM extraction + rule-based validation,
    create proposed `agreements` (raw/validated output kept apart in
    `agreement_extractions`), publish `agreement_detected`.
 
-Both steps are idempotent by `call_id`: re-processing reuses the stored
-transcript / agreements instead of recomputing. The client upload
+Both ASR and extraction are idempotent by `call_id`: re-processing reuses the
+stored transcript / agreements instead of recomputing. The client upload
 (`POST /calls/{id}/audio`) queues `worker-asr` automatically once the recording
 is complete; `POST /calls/{id}/analyze` re-queues explicitly. The LLM part is off
 unless `LLM_BASE_URL`/`LLM_MODEL` are set (`llm_enabled`).

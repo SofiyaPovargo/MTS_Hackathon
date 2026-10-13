@@ -5,7 +5,8 @@ routing body that forwards the call to the app user's SIP account and plays the
 consent notice (``file_to_A``). Progress notifications (``b``/``o``/``s``/``h``/
 ``e``/``crr``) then arrive at the event URL and drive the same
 ``CallSessionService`` the mock provider uses — so the ML/consent pipeline is
-unchanged.
+unchanged. ``crr`` (the finished recording) is handed to
+``ProviderRecordingService``, which queues the download for a worker.
 
 Exolve's control payload carries only ``{sip_id, numberA, call_sid}``: it does
 not identify our user. The app user is resolved from the SIP resource that
@@ -29,6 +30,7 @@ from app.infrastructure.db import repositories
 from app.infrastructure.db.models import Call, User
 from app.integrations.exolve import build_routing_response, parse_call_event, parse_sip_routes
 from app.services.call_session import CallSessionService
+from app.services.provider_recording import ProviderRecordingService
 
 logger = logging.getLogger(__name__)
 
@@ -42,10 +44,12 @@ class ExolveWebhookService:
         *,
         settings: Settings,
         calls: CallSessionService,
+        recordings: ProviderRecordingService,
     ) -> None:
         self._session = session
         self._settings = settings
         self._calls = calls
+        self._recordings = recordings
 
     # -- call control ---------------------------------------------------------
 
@@ -97,9 +101,15 @@ class ExolveWebhookService:
         if not parsed.known:
             logger.info("exolve: ignoring unknown event type=%s", parsed.exolve_type)
             return call, "ignored"
+        if parsed.exolve_type == "crr":
+            # The finished recording: remember the record id and let a worker
+            # download it (the webhook must answer Exolve quickly).
+            if not parsed.record_uid:
+                logger.info("exolve: crr without a record id for call %s", call.id)
+                return call, "ignored"
+            return call, await self._recordings.mark_ready(call, uid=parsed.record_uid)
         if parsed.event is None:
-            # ``h`` (bridge status) and ``crr`` (record ready) carry no lifecycle
-            # transition. ``crr`` is handled by the recording-download path.
+            # ``h`` (bridge status) carries no lifecycle transition.
             return call, "ignored"
         owner = await repositories.get_user(self._session, call.user_id)
         if owner is None:

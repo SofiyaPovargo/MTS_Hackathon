@@ -16,7 +16,10 @@ from collections.abc import AsyncIterator
 import httpx
 import pytest
 from fastapi import FastAPI
+from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
+from app.infrastructure.db.models import CallAudio
 from tests.integration.conftest import (
     USER_PHONES,
     VOICE_HEADERS,
@@ -78,11 +81,14 @@ async def event(
     kind: str,
     call_sid: str = "ex-call-1",
     client_id: str | None = None,
+    uid: str | int | None = None,
     headers: dict[str, str] | None = None,
 ) -> httpx.Response:
     payload: dict[str, object] = {"type": kind, "call_sid": call_sid}
     if client_id is not None:
         payload["client_id"] = client_id
+    if uid is not None:
+        payload["uid"] = uid
     return await client.post(
         EVENTS_URL, json=payload, headers=headers if headers is not None else VOICE_HEADERS
     )
@@ -270,3 +276,61 @@ async def test_event_for_unknown_call_is_404(
     _, client = app_and_client
     response = await event(client, kind="o", call_sid="no-such-call")
     assert response.status_code == 404
+
+
+async def _audio_url(session_factory: async_sessionmaker[AsyncSession], call_id: str) -> str | None:
+    async with session_factory() as session:
+        result = await session.execute(
+            select(CallAudio.storage_url).where(CallAudio.call_id == uuid.UUID(call_id))
+        )
+        return result.scalar_one_or_none()
+
+
+async def test_crr_remembers_the_record_id_for_the_download_worker(
+    app_and_client: tuple[FastAPI, httpx.AsyncClient],
+    exolve: FastAPI,
+    seeded_users: dict[str, uuid.UUID],
+    session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    _, client = app_and_client
+    anna = await login(client, USER_PHONES["anna"])
+    headers = auth_headers(str(anna["access_token"]))
+    await client.put("/api/me/consent", json={"granted": True}, headers=headers)
+
+    call_id = (await control(client)).json()["result"]["client_id"]
+    await event(client, kind="s", client_id=call_id)  # answered + consent -> recording
+
+    response = await event(client, kind="crr", client_id=call_id, uid=7135909209505402880)
+    assert response.status_code == 200, response.text
+    assert response.json()["status"] == "queued"
+
+    # The record id is parked on the audio row; a worker downloads the audio.
+    assert await _audio_url(session_factory, call_id) == "provider://exolve/7135909209505402880"
+
+
+async def test_crr_without_consent_is_rejected(
+    app_and_client: tuple[FastAPI, httpx.AsyncClient],
+    exolve: FastAPI,
+    seeded_users: dict[str, uuid.UUID],
+    session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    """No ``answered``+consent in our flow: the provider recording is not ours."""
+    _, client = app_and_client
+    call_id = (await control(client)).json()["result"]["client_id"]
+
+    response = await event(client, kind="crr", client_id=call_id, uid=42)
+    assert response.status_code == 200, response.text
+    assert response.json()["status"] == "rejected"
+    assert await _audio_url(session_factory, call_id) is None
+
+
+async def test_crr_without_a_record_id_is_ignored(
+    app_and_client: tuple[FastAPI, httpx.AsyncClient],
+    exolve: FastAPI,
+    seeded_users: dict[str, uuid.UUID],
+) -> None:
+    _, client = app_and_client
+    call_id = (await control(client)).json()["result"]["client_id"]
+    response = await event(client, kind="crr", client_id=call_id)
+    assert response.status_code == 200, response.text
+    assert response.json()["status"] == "ignored"
