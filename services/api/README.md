@@ -14,16 +14,16 @@ Layered per `AGENTS.md`:
 src/app/
   api/            HTTP routes, WebSocket endpoint, schemas (Pydantic v2), dependencies
   domain/         entities, enums, state machine, date/commitment rules (no IO)
-  services/       auth, call session, consent, agreement, task, schedule, sync, manager, events
+  services/       auth, call session, consent, agreement, task, schedule, sync, manager, data deletion, events
   infrastructure/ SQLAlchemy models/repositories, Redis cache, JWT, S3 storage
   integrations/   external ports: VoiceProviderPort (mock + Exolve adapter), calendar/reminders/messaging
   ml/             research layer: ASR (T-one client), diarization (pyannote), STT pipeline
   migrations/     Alembic migrations
-  worker.py       Celery entrypoint (queues: asr, ai, notifications)
+  worker.py       Celery entrypoint (queues: asr, ai, asr-live, ai-live, notifications)
   cli.py          `python -m app.cli seed` — demo team + users
 tests/
   unit/           date resolution, commitment rules, call state machine
-  integration/    auth, access, consent flow, agreements/tasks, schedule, sync, manager, WebSocket events
+  integration/    auth, access, consent flow, agreements/tasks (incl. edits), audio ingest/resume, schedule, sync, manager, WebSocket events, Exolve webhooks, provider recording, encryption, privacy
   ml/             T-one ASR client protocol, STT pipeline (roles, resample)
 ```
 
@@ -237,7 +237,10 @@ Agreement statuses: `detected`, `requires_review`, `needs_clarification`,
   are encrypted column-by-column with Fernet under `DATA_ENCRYPTION_KEY`
   (`infrastructure/crypto.py`, transparent ORM types). Logs never carry raw
   transcripts or prompts — the one LLM preview is passed through
-  `infrastructure/redaction.py` (masks phones, e-mails, long numbers).
+  `infrastructure/redaction.py` (masks phones, e-mails, long numbers). A daily
+  `beat` job (`purge_expired_audio`) and the on-request `delete_user_data`
+  (`services/data_deletion.py`) remove audio objects — including the legs of a
+  split call and the chunks of an unfinished resumable upload.
 
 ## Consent flow on `call.answered`
 
@@ -474,10 +477,10 @@ Event types are emitted by the ML workers (Stage 6, Track B), except
 
 ## Workers
 
-Celery, one image, separate queues (`worker-asr`, `worker-ai`,
-`worker-notifications`). The tasks are explicit placeholders that keep the
-queues healthy; the ML pipeline wiring is Stage 6. `data-deletion` jobs are
-enqueued from `POST /me/data/delete`.
+Celery, one image, separate queues (`worker-asr`, `worker-ai`, `worker-asr-live`,
+`worker-ai-live`, `worker-notifications`). `beat` schedules the daily audio
+retention purge (`purge_expired_audio`); `POST /me/data/delete` enqueues
+`request_data_deletion`. Both run against `services/data_deletion.py`.
 
 ## Tests
 

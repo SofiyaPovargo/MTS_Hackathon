@@ -6,8 +6,9 @@
 **Этап 6, backend-часть ML-пайплайна, слит в
 `development`** (PR #5): роли из каналов VoIP, воркеры `process_asr`/
 `run_llm_extraction`, триггер `POST /calls/{id}/analyze`; гейты ruff ✓, mypy ✓,
-pytest 135 passed. **Трек C (Mav): добавлен приём аудио от клиента**
-`POST /calls/{id}/audio` → MinIO → `call_audio` → авто-ASR (144 passed).
+pytest 135 passed. **Трек C (Mav) закрыт**: приём и докачка аудио от клиента,
+вебхуки Exolve + авто-скачивание записи `crr`, правка подтверждённых
+договорённостей, шифрование данных и подготовка деплоя (**233 passed**).
 Команда: **Sofiya** (ML), **Mav** (backend), **Xivalor** (mobile). Актуальное
 состояние по каждому этапу — в `PROGRESS.md`.
 
@@ -44,12 +45,12 @@ pytest 135 passed. **Трек C (Mav): добавлен приём аудио о
 ### Mav — backend и интеграции (Трек C)
 - [x] **Приём аудио от клиента** (критический путь): `POST /calls/{id}/audio` → MinIO → `call_audio` → очередь `process_asr` (202; отказ 409 без записи/согласия, mixed или per-leg `?leg=`)
 - [x] **Докачка записи при обрыве сети** (критический путь): докачиваемая загрузка по `Content-Range` (чанки сразу в MinIO, durable `offset`), идемпотентный повтор чанка, рассинхрон → 409 `expected_offset`; сборка чанков в объект `call_audio` и удаление чанков; тесты обрыва (Wi-Fi/4G/слабый сигнал); клиентская буферизация+ретрай — трек A
-- [ ] **Exolve `crr`** → скачать запись (Call Record API) → MinIO → авто-постановка ASR
-- [x] **Exolve webhooks** (call-control + statistics `b/o/s/h/e/crr`) end-to-end: `POST /api/voice/exolve/control` (маршрут по `EXOLVE_SIP_ROUTES`, `Call`, `file_to_A`, `event_URL`) + `POST /api/voice/exolve/events` (`b/o/s/e` → `CallSessionService`); `crr` — за следующим пунктом
+- [x] **Exolve `crr`** → скачать запись (Call Record API по `uid`, не по URL из вебхука — SSRF) → MinIO → авто-постановка ASR (`download_recording` на очереди `asr`; гейт по `recording_started_at`, идемпотентно, без ключа — пропуск)
+- [x] **Exolve webhooks** (call-control + statistics `b/o/s/h/e/crr`) end-to-end: `POST /api/voice/exolve/control` (маршрут по `EXOLVE_SIP_ROUTES`, `Call`, `file_to_A`, `event_URL`) + `POST /api/voice/exolve/events` (`b/o/s/e` → `CallSessionService`; `crr` → скачивание записи)
 - [x] **Consent-уведомление** в бою (`file_to_A`, режим `notice`) + запись в `consents`: notice в ответе call-control, ветка согласия — по событию `s`
 - [x] **Правка подтверждённых договорённостей** (`plan.md` §12–14): `PATCH /agreements/{id}` работает в любом статусе (в т.ч. `confirmed`) и переносится на связанную задачу (название, срок, ответственный) + сдвиг напоминаний; `POST /reject` подтверждённой отменяет задачу; каждое изменение → `version` + `audit_log`; повторное извлечение не создаёт дублей
-- [ ] **Приватность**: шифрование аудио/транскриптов, redaction логов LLM
-- [ ] (опц.) реальные адаптеры календаря/напоминаний; (опц.) деплой ближе к демо
+- [x] **Приватность**: шифрование полей `transcripts`/`agreement_extractions` (Fernet, `DATA_ENCRYPTION_KEY`; аудио — SSE-AES256), redaction логов LLM (`redact`/`redact_preview`); retention/удаление — `services/data_deletion.py` (`beat`, чистит и незавершённые чанки докачки)
+- [ ] (опц.) реальные адаптеры календаря/напоминаний (OAuth/FCM); (опц.) подъём на VPS — подготовка готова (`docker-compose.prod.yml`, `docs/deploy.md`)
 
 ### Sofia — трек B (ML, делает сама) — ✅ закрыт
 - [x] Решение по LLM (самохостинг: Ollama `qwen2.5:7b`) и включение извлечения в prod (`LLM_BASE_URL`/`LLM_MODEL`)
@@ -153,9 +154,9 @@ wav (research уже умеет их синтезировать) — мобил�
 - [x] **Валидация дат** из LLM: `domain/dates.py` + `conversation_date` (по времени разговора + TZ юзера)
 - [x] **Триггер**: `POST /calls/{id}/analyze` (owner-only, 202, только для записанного звонка)
 - [x] Тесты: роли каналов, `extract_pair`, сквозной пайплайн (идемпотентность)
-- [x] **Конфиденциальность**: удаление данных по запросу (`delete_user_data`), retention-пурж аудио (Celery-beat), redaction PII в логах, аудио SSE-AES256 (шифрование транскриптов в БД — в бэклоге)
+- [x] **Конфиденциальность**: удаление данных по запросу (`delete_user_data`), retention-пурж аудио (Celery-beat, батчами; чистит и незавершённые чанки докачки), redaction PII в логах, аудио SSE-AES256, **шифрование `transcripts`/`agreement_extractions` (Fernet, `DATA_ENCRYPTION_KEY`)**
 - [x] **Приём аудио**: `POST /calls/{id}/audio` (raw `audio/*`, `?leg=`, размер, приватность) → MinIO → `call_audio` → авто-постановка `process_asr`; отказ без записи/согласия
-- [ ] Авто-триггер по Exolve `crr` (скачать запись Call Record API в MinIO)
+- [x] Авто-триггер по Exolve `crr` (скачать запись Call Record API в MinIO) — трек C
 - [x] **Live-стриминг**: WS-аудио (`/ws/calls/{id}/audio?leg=`) → Redis → `worker-asr-live` (T-one стримингом, `partial_transcript` сразу) → `worker-ai-live` (инкрементальный extraction, upsert по fingerprint); VAD (Silero); LLM self-host (Ollama)
 - **Готово, когда**: `docker compose up -d` + аудио звонка → в БД транскрипт, в Redis
   события для WebSocket, на доске — договорённость.

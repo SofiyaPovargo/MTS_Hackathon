@@ -12,11 +12,14 @@ ML-исследование слито. **ML-пайплайн
 `development`): live-стриминг ASR (WS→Redis→T-one), инкрементальный extraction,
 VAD (Silero), LLM self-host (Ollama `qwen2.5:7b`), детерминированные даты,
 **Privacy** (удаление данных, retention-пурж, redaction); проверено end-to-end на
-реальных моделях; тесты зелёные. **Вне ML (осталось)**: notifications-воркер
-(`send_reminder`), авто-триггер Exolve `crr` (трек C), шифрование транскриптов в БД
-(бэклог), мобильный live-клиент (трек A). Разработка ведётся в ветках
-`track/mobile-consent` (Xivalor), `track/ml-live` (Sofiya),
-`track/backend-voice` (Mav); после зелёных гейтов и ревью — мерж в `development`.
+реальных моделях; тесты зелёные. **Трек C (Mav) закрыт**: приватность (шифрование
+транскриптов/LLM-вывода Fernet + redaction логов), авто-скачивание записи Exolve
+`crr`, докачиваемая загрузка аудио, правка подтверждённых договорённостей,
+подготовка деплоя. **Вне ML и трека C (осталось)**: notifications-воркер
+(`send_reminder`), подъём на VPS (нужен сервер/DNS), мобильный live-клиент (трек A).
+Разработка ведётся в ветках `track/mobile-consent` (Xivalor), `track/ml-live`
+(Sofiya), `track/backend-voice` (Mav); после зелёных гейтов и ревью — мерж в
+`development`.
 
 ---
 
@@ -29,7 +32,7 @@ VAD (Silero), LLM self-host (Ollama `qwen2.5:7b`), детерминирован�
 | 3. Мобильная основа | ✅ | `apps/mobile` (Flutter): слои UI/App/Domain/Infra, OTP-auth + refresh, контакты за портом, личная доска, SQLite (tasks/agreements/outbox/sync_state/session), Repository + sync (pull→apply→push→ack→token), `--dart-define=API_BASE_URL`; analyze ✓ | сборка/прогон на эмуляторе (нет Android SDK/Xcode в среде) — см. ограничение |
 | 4. Звонки | 🔶 | backend: `VoiceProviderPort` (mock) + webhook-маршруты + state machine; **mobile (Dart)**: `VoiceCallProvider` за DI + `CallApi`, `CallController` (набор/ответ/отбой/mute), экран звонка (оверлей: таймер, mute, входящий), дозвон из контактов/доски, `MockVoiceCallProvider`, зеркало стейт-машины; analyze ✓, **53 теста** | нативный адаптер (CallKit/Telecom/Exolve SDK) и реальные входящие VoIP — нужна машина с Android SDK/Xcode; реальный провайдер (блокер) |
 | 5. Consent flow | ✅ | backend-логика целиком: `consent.py`, `call_session.py`, state machine, тесты notice/DTMF/refusal/withdraw; **mobile (Dart)**: гейт согласия на первом входе, настройки записи/ИИ (toggle, отзыв, удаление данных, политика), локальный кэш решения (`app_settings`, схема v2) + write-through `PUT /me/consent`/`withdraw`/`/me/data/delete`, блокировка записи без согласия в `CallController` (нет согласия → обычный звонок), отказ собеседника → звонок без записи, `consent_notice/consent_result` в зеркале стейт-машины; analyze ✓, тесты | аудио-уведомление собеседнику (play_notice) проигрывает провайдер (бэкенд, Exolve `file_to_A`); UI-статусы согласия в звонке получат данные от WS (Этап 7) |
-| 6. Запись и анализ | ✅ | **прод-пайплайн** (`ml/pipeline.py`): декодер + роли из каналов VoIP / диаризация для mono-PSTN (`ml/stt`), транскрипт в `transcripts` (JSONB-сегменты, `role_source`), LLM+Instructor + валидация (`ml/extraction`, детерминированные даты), реальные воркеры `process_asr`/`run_llm_extraction`, эмиссия `partial_transcript`/`agreement_detected`, **приём аудио от клиента** `POST /calls/{id}/audio` (raw `audio/*`, mixed или `?leg=`, MinIO + `call_audio`, авто-постановка ASR, только после записи/согласия, **докачиваемая загрузка** `Content-Range` + `offset` — обрыв сети не теряет записанное), триггер `POST /calls/{id}/analyze`, идемпотентность по `call_id`; **live-стриминг**: WS `/ws/calls/{id}/audio?leg=` → Redis → `worker-asr-live` (T-one стримингом, `partial_transcript` сразу) → `worker-ai-live` (инкрементальный extraction, upsert по fingerprint); **VAD** (Silero) в `ml/vad`; **LLM self-host** (Ollama `qwen2.5:7b` в compose); **Privacy**: удаление данных, retention-пурж (beat), redaction | авто-триггер Exolve `crr` (трек C); шифрование транскриптов в БД (бэклог) |
+| 6. Запись и анализ | ✅ | **прод-пайплайн** (`ml/pipeline.py`): декодер + роли из каналов VoIP / диаризация для mono-PSTN (`ml/stt`), транскрипт в `transcripts` (JSONB-сегменты, `role_source`), LLM+Instructor + валидация (`ml/extraction`, детерминированные даты), реальные воркеры `process_asr`/`run_llm_extraction`, эмиссия `partial_transcript`/`agreement_detected`, **приём аудио от клиента** `POST /calls/{id}/audio` (raw `audio/*`, mixed или `?leg=`, MinIO + `call_audio`, авто-постановка ASR, только после записи/согласия, **докачиваемая загрузка** `Content-Range` + `offset` — обрыв сети не теряет записанное), триггер `POST /calls/{id}/analyze`, идемпотентность по `call_id`; **live-стриминг**: WS `/ws/calls/{id}/audio?leg=` → Redis → `worker-asr-live` (T-one стримингом, `partial_transcript` сразу) → `worker-ai-live` (инкрементальный extraction, upsert по fingerprint); **VAD** (Silero) в `ml/vad`; **LLM self-host** (Ollama `qwen2.5:7b` в compose), **авто-скачивание записи Exolve `crr`** (`download_recording` → MinIO → ASR; гейт согласия), **шифрование** `transcripts`/`agreement_extractions` (Fernet, `DATA_ENCRYPTION_KEY`) + redaction логов LLM, retention/удаление данных (`services/data_deletion.py`, Celery-beat) | — |
 | 7. Договорённости и задачи | 🔶 | backend: agreement-статусы, confirm→task, PATCH-guards, audit; тесты | live-карточка (UI), напоминания, привязка к звонку в UI |
 | 8. Доски | 🔶 | backend: `/me/tasks`, `/manager/team/tasks|stats|members`, роли+team, тесты доступа | мобильные доски (личная и менеджерская), фильтры/сортировка, аналитика UI |
 | 9. Итог и календарь | 🔶 | backend: `schedule.py` — календарное событие/`.ics`/напоминания/черновик клиенту, только для confirmed-задач, тесты | резюме разговора, UI календаря/напоминаний, реальные адаптеры |
@@ -67,13 +70,17 @@ VAD (Silero), LLM self-host (Ollama `qwen2.5:7b`), детерминирован�
 - `auth.py` — OTP в Redis, JWT access + rotating refresh (jti в Redis), logout-ревокация
 - `call_session.py` — запись только после `answered` + согласия; `analysis_started`
 - `consent.py` — режимы notice/dtmf/sms_link; запись в `consents`
-- `agreement.py` — статусы, confirm→task, PATCH-guards (confirmed/rejected final)
+- `agreement.py` — статусы, confirm→task, правка/отклонение **подтверждённой**
+  договорённости → задача (название/срок/ответственный) + сдвиг напоминаний
+  (`version`+`audit`); `rejected` финальна
 - `task.py` — статусы задач, complete
 - `schedule.py` — календарь/`.ics`, напоминания, черновик сообщения; только для
   задач из `confirmed`-договорённости (порты за `Integrations`)
 - `sync.py` — delta pull (since-token), идемпотентный push (idempotency_key hash),
   конфликт → server version
 - `manager.py` — доска команды: роли+team_id проверяются на сервере
+- `data_deletion.py` — retention-пурж аудио и удаление данных пользователя:
+  объекты (смесь/ноги/незавершённые чанки) → звонки-каскад → задачи
 - `access.py` — права user/manager
 - `events.py` — event hub в Redis (`events:call:{id}`): replay-список + pub/sub,
   версия схемы 1, дедуп на стыке; типы: `partial_transcript | agreement_detected | analysis_started | call_ended`
@@ -95,6 +102,9 @@ VAD (Silero), LLM self-host (Ollama `qwen2.5:7b`), детерминирован�
 - `db/` — SQLAlchemy async: models, repositories, session; `migrations/` (Alembic,
   initial `ee8b295d7610`)
 - `storage.py` — S3/MinIO (аудио, retention), `cache.py` — Redis
+- `crypto.py` — Fernet-шифрование полей (`EncryptedText`/`EncryptedJSON`,
+  `DATA_ENCRYPTION_KEY`, префикс `enc:v1:`); `redaction.py` — маскирование PII
+  в логах (`redact`/`redact_preview`)
 - `security.py` — JWT HS256
 
 ### integrations/ — внешние порты
@@ -127,9 +137,13 @@ VAD (Silero), LLM self-host (Ollama `qwen2.5:7b`), детерминирован�
 - `run_llm_extraction` (worker-ai) → agreements + `agreement_detected`; оба идемпотентны по `call_id`
 - `stream_asr` (worker-asr-live) → live-стримы → транскрипт; `stream_extract`
   (worker-ai-live) → инкрементальный extraction (debounce)
+- `download_recording` (worker-asr) → запись Exolve `crr` из Call Record API в
+  MinIO → `process_asr`; гейт по `recording_started_at`, идемпотентно,
+  клиентская загрузка не перетирается
 - `request_data_deletion` → реальное удаление данных пользователя
-  (`services/data_deletion.delete_user_data`: аудио в MinIO + звонки/транскрипты/
-  agreements/tasks); `purge_expired_audio` (Celery-beat) → retention-пурж аудио
+  (`services/data_deletion.delete_user_data`): объекты аудио (смесь, ноги,
+  незавершённые чанки докачки) + звонки/транскрипты/agreements/tasks;
+  `purge_expired_audio` (Celery-beat, батчами) → retention-пурж аудио
 - `send_reminder` — заглушка (`implemented: False`)
 
 ### cli.py
@@ -201,12 +215,12 @@ models, sync_models, ports), `application/` (Riverpod-контроллеры + p
 | Группа | Файлы | Что покрывают |
 |---|---|---|
 | domain (1) | test_commitment | типы договорённостей |
-| unit (4) | test_dates, test_rules, test_state_machine, test_exolve | относительные даты, пороги, переходы звонка, Exolve (события, тело маршрута, Call Record API, порт, разбор `EXOLVE_SIP_ROUTES`) |
+| unit (7) | test_dates, test_rules, test_state_machine, test_exolve, test_audio_ingest, test_crypto, test_redaction | относительные даты, пороги, переходы звонка, Exolve (события, тело маршрута, Call Record API, порт, разбор `EXOLVE_SIP_ROUTES`), `Content-Range`-парсер, шифрование полей, redaction PII |
 | ml (6) | test_tone_client, test_pipeline, test_channels, test_extraction, test_trim, test_live | протокол T-one (`transcribe`+`stream`), слияние ролей/ресамплинг, роли из каналов VoIP, извлечение+валидация (детерминированные даты), VAD-обрезка, чтение Redis-стримов |
-| integration (9) | test_auth, test_access, test_call_consent, test_agreements_tasks, test_schedule, test_sync, test_manager, test_ws_events, test_ml_pipeline | OTP/refresh, права ролей+команды, запись без consent, confirm→task, календарь/напоминания/черновик (только confirmed), sync-идемпотентность, WS auth/ownership/replay/live, сквозной ML-пайплайн (batch + live) + `POST /calls/{id}/analyze` |
+| integration (16) | test_auth, test_access, test_call_consent, test_agreements_tasks, test_agreement_edits, test_audio_ingest, test_audio_resume, test_schedule, test_sync, test_manager, test_ws_events, test_ml_pipeline, test_exolve_webhooks, test_provider_recording, test_transcript_encryption, test_privacy | OTP/refresh, права ролей+команды, запись без consent, confirm→task, правка/отклонение **подтверждённой** договорённости → задача/напоминания (`version`+`audit`), приём аудио (mixed/`?leg=`/докачка `Content-Range`, 409), календарь/напоминания/черновик (только confirmed), sync-идемпотентность, WS auth/ownership/replay/live, сквозной ML-пайплайн (batch + live) + `POST /calls/{id}/analyze`, вебхуки Exolve (control/events), авто-скачивание записи (`crr` → MinIO, гейт согласия, идемпотентность), шифрование транскрипта/LLM-вывода в БД, retention/удаление данных |
 | mobile (13) | domain/models, domain/call, domain/consent, infrastructure/local_stores, infrastructure/sync_engine, application/auth_controller, application/board_controller, application/contacts_controller, application/call_controller, application/consent_controller, widget/app, widget/call_screen, widget/consent_screen, widget/settings_screen | парсинг моделей, стейт-машина звонка, согласие (AppConsent/статусы, кэш + write-through + retry), SQLite-хранилища (включая миграцию v1→v2), цикл sync + идемпотентность/конфликт/ретраи, контроллеры, экраны (доска, контакты, звонок, согласие, настройки) |
 
-Backend: **171 passed** (unit+ml+domain 103, integration 68); интеграционные требуют
+Backend: **233 passed** (unit+ml+domain 129, integration 104); интеграционные требуют
 `docker compose up -d postgres redis` (отдельная БД `agreements_test`; креды берутся
 из `DATABASE_URL`). ML проверен end-to-end на реальных моделях (T-one, Ollama
 `qwen2.5:7b`, Silero VAD, pyannote).
@@ -221,8 +235,8 @@ Mobile: **82 passed** (`flutter test`, без Docker); локальные хра
 cd services/api
 uv run ruff check .        # lint
 uv run mypy .              # types
-uv run pytest tests/unit tests/ml tests/domain   # 103 (без Docker)
-uv run pytest tests/integration                  # 68 (postgres+redis)
+uv run pytest tests/unit tests/ml tests/domain   # 129 (без Docker)
+uv run pytest tests/integration                  # 104 (postgres+redis)
 docker compose up -d       # поднять стек
 uv run python -m app.cli seed   # демо-данные (если БД пуста)
 curl -k https://localhost/api/healthz   # живо (nginx TLS)
@@ -247,10 +261,11 @@ flutter test               # 82 теста (Dart-уровень, без Docker)
 | ~~Выбор voice-провайдера~~ **МТС Exolve** (решено 2026-10-13, `plan.md` §11.1) | снят; Этап 4 — за webhook-маршрутами и VoIP SDK |
 | ~~Формат WS-событий~~ версия 1 + `GET /api/ws/events/schema` (трек C) | снят; мобильные/ML эмитят по контракту |
 | **Аудио в ML — от мобильного клиента** (`MEDIA_INGEST_URL`): у Exolve нет серверного медиапотока (решено 2026-10-13, §11.1) | Этап 6: ingest-эндпоинт **готов** (PR #8) и **live WS `/ws/calls/{id}/audio`** готов (track/ml-live); осталась отправка аудио клиентом (трек A) |
-| **Авто-триггер анализа по Exolve `crr`** (скачать запись → MinIO → очередь) не реализован | Этап 6/демо: сейчас триггер ручной — `POST /calls/{id}/analyze` (live стартует по WS) |
+| ~~Авто-триггер анализа по Exolve `crr`~~ **реализован** (трек C): `crr` → `call_audio.provider://exolve/<uid>` → job `download_recording` → MinIO → ASR (гейт согласия, идемпотентно, клиентская загрузка не перетирается) | снят; в бою нужен `EXOLVE_API_KEY` |
 | У Exolve нет сбора DTMF → `CONSENT_MODE=notice` (§11.1) | Этап 5: для Exolve только notice; `dtmf` — за другими провайдерами |
 | Вебхуки Exolve подписаны общим секретом в URL (`?secret=`) — заголовки Exolve не ставит | Деплой: URL колбэка — секрет; `PUBLIC_BASE_URL` обязателен в бою |
-| **Privacy**: удаление данных, retention-пурж, redaction — **сделаны**; шифрование транскриптов в БД — в бэклоге | Этап 6: остался только storage-level encryption транскриптов (аудио уже SSE-AES256) |
+| ~~Шифрование персональных данных~~ **сделано** (трек C): аудио — SSE-AES256 в MinIO, `transcripts`/`agreement_extractions` — Fernet (`DATA_ENCRYPTION_KEY`), LLM-логи — с редакцией (`redact`/`redact_preview`); retention/удаление — `services/data_deletion.py` (`beat`, батчами; чистит и незавершённые чанки докачки) | снят; `DATA_ENCRYPTION_KEY` не менять без перешифровки |
+| **Деплой на VPS** (нужен сервер + DNS) | Подготовка готова: `docker-compose.prod.yml` + `docs/deploy.md` (Let's Encrypt, секреты, колбэки Exolve); подъём — за командой со стендом |
 | ~~Выбор LLM (самохостинг)~~ **Ollama `qwen2.5:7b` в compose** (решено) | снят; извлечение включено |
 
 ## История (для контекста)
@@ -269,3 +284,7 @@ flutter test               # 82 теста (Dart-уровень, без Docker)
 - `#9` — **Этап 5 (mobile, Dart)**: consent-гейт + настройки записи/ИИ (`app_settings` v2), кэш решения + write-through, блокировка записи без согласия, отказ собеседника → обычный звонок; analyze ✓, 82 теста
 - `309bf34`/`c217b00`/`37fcc3a`/`252807b` — **ML-трек B (`track/ml-live`)**: LLM self-host (Ollama) + детерминированные даты, Silero VAD, live-стриминг ASR (WS→Redis→T-one) + инкрементальный extraction, документация; влито в `development`
 - `12f596c` — **ML-фиксы**: live-debounce, finalize T-one 30→5 с, интеграционный conftest по `DATABASE_URL`; end-to-end проверка на реальных моделях
+- `693beaa`/`36a2e31` — **ML-трек B (Sofiya)**: docs (live/VAD/LLM закрыты) + реализация приватности: удаление данных и retention-пурж (`services/data_deletion.py`), redaction логов, `beat` — влито в `development`
+- `#10` — **Трек C (Mav)**: вебхуки Exolve call-control + прогресс-события end-to-end (маршрут по `EXOLVE_SIP_ROUTES`, `file_to_A`, `client_id`; `b/o/s/e` → общий `CallSessionService`)
+- **Трек C (Mav)**: докачиваемая загрузка аудио (`Content-Range`/`offset`, идемпотентный повтор, 409 при рассинхроне, миграция `call_audio.pending_uploads`); правка/отклонение **подтверждённой** договорённости → задача + сдвиг напоминаний (`version`+`audit`)
+- **Трек C (Mav)**: авто-скачивание записи Exolve `crr` (`download_recording` → MinIO → ASR); шифрование `transcripts`/`agreement_extractions` (Fernet, миграция `a1c9f4e27b30`) + redaction логов LLM; retention-пурж чистит и незавершённые чанки; деплой-оверлей `docker-compose.prod.yml` + `docs/deploy.md`
