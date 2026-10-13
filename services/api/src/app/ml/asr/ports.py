@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections.abc import AsyncIterator, Awaitable, Callable
 from dataclasses import dataclass
 from typing import Protocol
 
@@ -22,8 +23,20 @@ class TextPhrase:
 
 
 class ASRPort(Protocol):
-    """Контракт streaming-распознавания речи."""
+    """Контракт потокового распознавания речи (батч)."""
 
     async def transcribe(self, pcm_int16: bytes) -> list[TextPhrase]:
         """Распознать поток 8кГц int16 PCM, вернуть фразы с таймкодами."""
+        ...
+
+
+class StreamingASRPort(ASRPort, Protocol):
+    """Контракт live-распознавания: чанки на вход, фразы колбэком на выход."""
+
+    async def stream(
+        self,
+        chunks: AsyncIterator[bytes],
+        on_phrase: Callable[[TextPhrase], Awaitable[None]],
+    ) -> None:
+        """Стримить PCM-чанки и отдавать распознанные фразы по мере готовности."""
         ...

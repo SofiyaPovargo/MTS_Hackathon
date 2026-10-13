@@ -142,6 +142,48 @@ services:
       redis:
         condition: service_healthy
 
+  # Live streaming ASR: consumes Redis audio streams and runs T-one incrementally.
+  # The T-one server is the optional `asr` service (profile `ml`); start it too:
+  #   docker compose --profile ml up -d asr worker-asr-live
+  worker-asr-live:
+    build:
+      context: services/api
+      target: worker
+    env_file: .env
+    environment:
+      DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-app}:${POSTGRES_PASSWORD:-app}@postgres:5432/${POSTGRES_DB:-agreements}
+      REDIS_URL: redis://redis:6379/0
+      # By service name inside the compose network, never localhost.
+      ASR_WS_URL: ${ASR_WS_URL:-ws://asr:8080/api/ws}
+    # One long-lived live stream at a time per worker; scale with replicas.
+    command: ["uv", "run", "celery", "-A", "app.worker", "worker", "-Q", "asr-live", "-c", "1", "-l", "info"]
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
+  # Incremental commitment extraction during the call (debounced).
+  worker-ai-live:
+    build:
+      context: services/api
+      target: worker
+    env_file: .env
+    environment:
+      DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-app}:${POSTGRES_PASSWORD:-app}@postgres:5432/${POSTGRES_DB:-agreements}
+      REDIS_URL: redis://redis:6379/0
+      LLM_BASE_URL: ${LLM_BASE_URL:-http://ollama:11434/v1}
+      LLM_MODEL: ${LLM_MODEL:-qwen2.5:7b}
+      LLM_API_KEY: ${LLM_API_KEY:-ollama}
+    command: ["uv", "run", "celery", "-A", "app.worker", "worker", "-Q", "ai-live", "-l", "info"]
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      ollama:
+        condition: service_healthy
+
   # Optional: T-one streaming ASR server (research). Not part of the default MVP
   # stack; start it explicitly with: docker compose --profile ml up -d asr
   # The STT CLI talks to it via ASR_WS_URL (default ws://localhost:8080/api/ws).

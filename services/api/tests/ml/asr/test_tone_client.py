@@ -3,11 +3,12 @@
 from __future__ import annotations
 
 import json
+from collections.abc import AsyncIterator
 
 import pytest
 from websockets.asyncio.server import ServerConnection, serve
 
-from app.ml.asr.ports import CHUNK_BYTES
+from app.ml.asr.ports import CHUNK_BYTES, TextPhrase
 from app.ml.asr.tone import ToneASRClient
 
 
@@ -49,3 +50,22 @@ async def test_transcribe_returns_phrases_in_order() -> None:
     first = phrases[0]
     assert first.start_time == 0.1
     assert first.end_time == 0.8
+
+
+@pytest.mark.asyncio
+async def test_stream_dispatches_phrases_via_callback() -> None:
+    async with serve(_fake_tone_handler, "127.0.0.1", 0) as server:
+        port = server.sockets[0].getsockname()[1]
+        client = ToneASRClient(f"ws://127.0.0.1:{port}/api/ws")
+
+        collected: list[str] = []
+
+        async def on_phrase(phrase: TextPhrase) -> None:
+            collected.append(phrase.text)
+
+        async def chunks() -> AsyncIterator[bytes]:
+            yield bytes(2 * CHUNK_BYTES)
+
+        await client.stream(chunks(), on_phrase)
+
+    assert collected == ["привет", "пока"]

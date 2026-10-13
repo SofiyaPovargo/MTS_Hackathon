@@ -292,10 +292,82 @@ async def extract_and_store(
     return created
 
 
+async def extract_incremental(
+    session: AsyncSession,
+    *,
+    call_id: uuid.UUID,
+    extractor: ExtractionPort | None,
+    events: EventsPort,
+    settings: Settings,
+) -> list[Agreement]:
+    """Инкрементальное извлечение: upsert по fingerprint, события только на изменения.
+
+    Live-воркер вызывает это по ходу разговора (debounce) и финально в конце;
+    повторный прогон без изменений ничего не эмитит и не дублирует agreements.
+    """
+    if extractor is None:
+        logger.info("LLM extractor is disabled; skipping live extraction for %s", call_id)
+        return []
+
+    call = await repositories.get_call(session, call_id)
+    if call is None:
+        raise NotFound("call not found")
+    user = await repositories.get_user(session, call.user_id)
+    if user is None:
+        raise NotFound("call owner not found")
+
+    row = await repositories.get_transcript(session, call_id)
+    if row is None or not row.segments:
+        logger.warning("no transcript for call %s; nothing to extract", call_id)
+        return []
+
+    segments = [TranscriptSegment.model_validate(segment) for segment in row.segments]
+    context = ConversationContext(
+        conversation_id=str(call_id),
+        conversation_date=conversation_date(call, user),
+        user_timezone=user.timezone,
+        participants=_participants(user, call),
+        transcript=segments,
+    )
+
+    service = ExtractionService(extractor, confidence_threshold=settings.confidence_threshold)
+    raw, validated = await service.extract_pair(context)
+    raw_output = {"commitments": [commitment.model_dump(mode="json") for commitment in raw]}
+
+    agreements = AgreementService(session, settings, TaskService(session))
+    changed_agreements: list[Agreement] = []
+    for commitment in validated:
+        agreement, changed = await agreements.upsert_from_commitment(
+            user,
+            call,
+            commitment,
+            model=settings.llm_model or "unknown",
+            prompt_version=PROMPT_VERSION,
+            raw_output=raw_output,
+        )
+        if changed:
+            changed_agreements.append(agreement)
+            await events.emit(
+                CallEventMessage(
+                    event="agreement_detected",
+                    call_id=call_id,
+                    payload=agreement_payload(agreement),
+                )
+            )
+    await session.flush()
+    logger.info(
+        "live extraction for call %s: %d changed agreement(s)",
+        call_id,
+        len(changed_agreements),
+    )
+    return changed_agreements
+
+
 __all__ = [
     "agreement_payload",
     "conversation_date",
     "extract_and_store",
+    "extract_incremental",
     "load_call_audio",
     "transcribe_and_store",
 ]

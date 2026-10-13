@@ -13,6 +13,9 @@ from __future__ import annotations
 
 import asyncio
 import json
+import time
+from collections.abc import AsyncIterator, Awaitable, Callable
+from typing import Any
 
 import websockets
 from websockets.exceptions import ConnectionClosed
@@ -21,6 +24,11 @@ from app.ml.asr.ports import CHUNK_BYTES, TextPhrase
 
 # Сколько ждать финальную фразу после отправки маркера конца аудио.
 FINALIZE_TIMEOUT = 30.0
+
+# Как часто просыпаться, чтобы проверить завершение отправки (пока идёт стрим).
+POLL_INTERVAL = 1.0
+
+PhraseHandler = Callable[[TextPhrase], Awaitable[None]]
 
 
 class ToneASRClient:
@@ -80,3 +88,47 @@ class ToneASRClient:
                     await ws.send(b"")
                     finished = True
         return phrases
+
+    async def stream(
+        self,
+        chunks: AsyncIterator[bytes],
+        on_phrase: PhraseHandler,
+    ) -> None:
+        """Стримить PCM-чанки в T-one и отдавать фразы колбэком по мере распознавания.
+
+        Отправка и приём идут параллельно: чанки приходят из live-источника
+        (Redis-стрим), а распознанные фразы обрабатываются сразу, не дожидаясь
+        конца потока. Завершение: пустые байты; после этого приём ещё недолго
+        ждёт финальные фразы (T-one держит соединение открытым).
+        """
+        finished = asyncio.Event()
+
+        async def sender(ws: Any) -> None:
+            try:
+                async for chunk in chunks:
+                    await ws.send(chunk)
+                await ws.send(b"")
+            finally:
+                finished.set()
+
+        async def receiver(ws: Any) -> None:
+            idle_since_finished: float | None = None
+            while True:
+                try:
+                    message = await asyncio.wait_for(ws.recv(), timeout=POLL_INTERVAL)
+                except TimeoutError:
+                    if finished.is_set():
+                        if idle_since_finished is None:
+                            idle_since_finished = time.monotonic()
+                        elif time.monotonic() - idle_since_finished >= FINALIZE_TIMEOUT:
+                            break
+                    continue
+                except ConnectionClosed:
+                    break
+                idle_since_finished = None
+                phrases, _ = self._parse_message(message)
+                for phrase in phrases:
+                    await on_phrase(phrase)
+
+        async with websockets.connect(self._ws_url) as ws:
+            await asyncio.gather(sender(ws), receiver(ws))

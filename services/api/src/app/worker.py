@@ -17,18 +17,21 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import time
 import uuid
 
 from celery import Celery
+from redis.asyncio import Redis
 
 from app.config import Settings, get_settings
 from app.infrastructure.cache import Cache
 from app.infrastructure.db.session import create_engine_and_factory
 from app.infrastructure.storage import MinioStorage
-from app.ml.asr.ports import ASRPort
+from app.ml.asr.ports import StreamingASRPort
 from app.ml.diarization.ports import DiarizationPort
 from app.ml.extraction.ports import ExtractionPort
-from app.ml.pipeline import extract_and_store, transcribe_and_store
+from app.ml.live import stream_transcribe_and_store
+from app.ml.pipeline import extract_and_store, extract_incremental, transcribe_and_store
 from app.ml.vad.ports import VadPort
 from app.services.events import EventHub
 
@@ -53,7 +56,7 @@ celery_app.conf.update(
 )
 
 
-def _build_asr(settings: Settings) -> ASRPort:
+def _build_asr(settings: Settings) -> StreamingASRPort:
     """T-one WebSocket client (lazy import keeps the API image ML-free)."""
     from app.ml.asr.tone import ToneASRClient
 
@@ -170,6 +173,91 @@ async def _run_llm_extraction(call_id: str) -> int:
         await engine.dispose()
 
 
+@celery_app.task(queue="asr-live", name="stream_asr")
+def stream_asr(call_id: str) -> dict[str, object]:
+    """worker-asr-live: live-стримы аудио -> транскрипт + ``partial_transcript``."""
+    if not get_settings().live_asr_enabled:
+        return {"call_id": call_id, "job": "asr-live", "skipped": "disabled"}
+    segments = asyncio.run(_stream_asr(call_id))
+    return {"call_id": call_id, "job": "asr-live", "segments": segments}
+
+
+@celery_app.task(queue="ai-live", name="stream_extract")
+def stream_extract(call_id: str) -> dict[str, object]:
+    """worker-ai-live: инкрементальное извлечение по ходу разговора."""
+    changed = asyncio.run(_stream_extract(call_id))
+    return {"call_id": call_id, "job": "ai-live", "agreements": changed}
+
+
+async def _discover_legs(redis: Redis, call_id: str, *, wait_sec: float = 3.0) -> list[str]:
+    """Найти ноги звонка по ключам ``audio:call:{call_id}:*`` (короткое ожидание)."""
+    pattern = f"audio:call:{call_id}:*"
+    deadline = time.monotonic() + wait_sec
+    while time.monotonic() < deadline:
+        keys = await redis.keys(pattern)
+        legs = sorted({str(key).rsplit(":", 1)[-1] for key in keys})
+        if legs:
+            return legs
+        await asyncio.sleep(0.2)
+    return []
+
+
+async def _stream_asr(call_id: str) -> int:
+    settings = get_settings()
+    call_uuid = uuid.UUID(call_id)
+    engine, factory = create_engine_and_factory(settings.database_url)
+    cache = Cache.from_settings(settings)
+    redis = Redis.from_url(settings.redis_url, decode_responses=True)
+    try:
+        events = EventHub(cache)
+        asr = _build_asr(settings)
+        legs = await _discover_legs(redis, call_id) or ["mixed"]
+
+        def _enqueue_extract() -> None:
+            stream_extract.delay(call_id)
+
+        async with factory() as session:
+            row = await stream_transcribe_and_store(
+                session,
+                call_id=call_uuid,
+                legs=legs,
+                redis=redis,
+                asr=asr,
+                events=events,
+                settings=settings,
+                enqueue_extract=_enqueue_extract,
+            )
+            await session.commit()
+            return len(row.segments) if row is not None and row.segments else 0
+    finally:
+        await redis.aclose()
+        await cache.close()
+        await engine.dispose()
+
+
+async def _stream_extract(call_id: str) -> int:
+    settings = get_settings()
+    call_uuid = uuid.UUID(call_id)
+    engine, factory = create_engine_and_factory(settings.database_url)
+    cache = Cache.from_settings(settings)
+    try:
+        events = EventHub(cache)
+        extractor = _build_extractor(settings)
+        async with factory() as session:
+            changed = await extract_incremental(
+                session,
+                call_id=call_uuid,
+                extractor=extractor,
+                events=events,
+                settings=settings,
+            )
+            await session.commit()
+            return len(changed)
+    finally:
+        await cache.close()
+        await engine.dispose()
+
+
 @celery_app.task(queue="notifications", name="send_reminder")
 def send_reminder(reminder_id: str) -> dict[str, object]:
     """Stage 7/9: send a reminder through the RemindersPort (never skipped)."""
@@ -183,4 +271,14 @@ def request_data_deletion(user_id: str) -> dict[str, object]:
 
 
 def main() -> None:
-    celery_app.worker_main(["-A", "app.worker", "worker", "-Q", "asr,ai,notifications", "-l", "info"])
+    celery_app.worker_main(
+        [
+            "-A",
+            "app.worker",
+            "worker",
+            "-Q",
+            "asr,ai,asr-live,ai-live,notifications",
+            "-l",
+            "info",
+        ]
+    )

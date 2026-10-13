@@ -6,6 +6,7 @@ Raw LLM output, validated output and user edits are stored separately
 
 from __future__ import annotations
 
+import re
 import uuid
 from datetime import date, time
 from decimal import Decimal
@@ -36,6 +37,19 @@ EDITABLE_FIELDS = frozenset(
         "currency",
     }
 )
+
+_COMPACT = re.compile(r"\s+")
+_PUNCT = re.compile(r"[^\w\s]")
+
+
+def _normalize_quote(text: str) -> str:
+    """Стабильная нормализация цитаты для fingerprint (регистр/пунктуация/ё)."""
+    cleaned = _PUNCT.sub(" ", (text or "").lower().replace("ё", "е"))
+    return _COMPACT.sub(" ", cleaned).strip()
+
+
+def _fingerprint(type: str, owner: Owner, source_quote: str) -> str:
+    return f"{type}|{owner.value}|{_normalize_quote(source_quote)}"
 
 
 def _json_safe(value: object) -> object:
@@ -155,6 +169,70 @@ class AgreementService:
         )
         await self._session.flush()
         return agreement
+
+    async def upsert_from_commitment(
+        self,
+        user: User,
+        call: Call,
+        commitment: Commitment,
+        *,
+        model: str,
+        prompt_version: str,
+        raw_output: dict[str, Any],
+    ) -> tuple[Agreement, bool]:
+        """Создать или обновить системную договорённость (идемпотентно по fingerprint).
+
+        Live-извлечение перезапускается по мере роста транскрипта, поэтому одна и
+        та же договорённость приходит многократно. Идентичность держит fingerprint
+        (type + owner + цитата): новые создаём, изменённые обновляем (bump
+        ``version``), а подтверждённые/отклонённые пользователем не трогаем.
+        Возвращает ``(agreement, changed)``.
+        """
+        fingerprint = _fingerprint(commitment.type, commitment.owner, commitment.source_quote)
+        existing = await repositories.list_agreements_for_call(self._session, call.id)
+        match = next(
+            (a for a in existing if _fingerprint(a.type, a.owner, a.source_quote) == fingerprint),
+            None,
+        )
+        if match is None:
+            agreement = await self.create_from_commitment(
+                user, call, commitment, model=model, prompt_version=prompt_version, raw_output=raw_output
+            )
+            return agreement, True
+        if match.status in (AgreementStatus.confirmed, AgreementStatus.rejected):
+            return match, False
+
+        status = commitment.status_for(self._settings.confidence_threshold)
+        updates: dict[str, Any] = {
+            "title": commitment.title,
+            "object": commitment.object,
+            "due_date": commitment.due_date,
+            "due_time": commitment.due_time,
+            "amount": commitment.amount,
+            "currency": commitment.currency,
+            "confidence": Decimal(str(commitment.confidence)),
+            "status": status,
+            "audio_start": float(commitment.audio_start),
+            "audio_end": float(commitment.audio_end),
+        }
+        changed = False
+        for field, value in updates.items():
+            if getattr(match, field) != value:
+                setattr(match, field, value)
+                changed = True
+        if not changed:
+            return match, False
+        match.version += 1
+        await repositories.record_audit(
+            self._session,
+            entity_type="agreement",
+            entity_id=match.id,
+            action="agreement.updated",
+            actor_user_id=user.id,
+            payload={"status": status.value},
+        )
+        await self._session.flush()
+        return match, True
 
     async def create_manual(
         self,

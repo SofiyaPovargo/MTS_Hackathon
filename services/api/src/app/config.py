@@ -98,6 +98,14 @@ class Settings(BaseSettings):
     vad_min_speech_ms: int = Field(default=100, alias="VAD_MIN_SPEECH_MS")
     vad_min_silence_ms: int = Field(default=100, alias="VAD_MIN_SILENCE_MS")
 
+    # Live streaming ASR (plan.md §12). The client streams per-leg PCM over WS;
+    # the backend runs T-one incrementally and updates the live card.
+    live_asr_enabled: bool = Field(default=True, alias="LIVE_ASR_ENABLED")
+    # Debounce: after this many seconds of new phrases, re-run extraction.
+    live_debounce_sec: float = Field(default=20.0, alias="LIVE_DEBOUNCE_SEC")
+    # Safety cap: end a live stream after this many seconds even without ``eof``.
+    live_max_sec: float = Field(default=3600.0, alias="LIVE_MAX_SEC")
+
     # --- LLM extraction (optional) ---
     # OpenAI-compatible API for commitment extraction. Local default: Ollama.
     llm_api_key: str = Field(default="", alias="LLM_API_KEY")

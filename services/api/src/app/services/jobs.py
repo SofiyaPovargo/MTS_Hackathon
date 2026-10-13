@@ -19,6 +19,7 @@ logger = logging.getLogger(__name__)
 
 ASR_TASK = "process_asr"
 AI_TASK = "run_llm_extraction"
+LIVE_ASR_TASK = "stream_asr"
 
 
 class AnalysisQueuePort(Protocol):
@@ -26,6 +27,7 @@ class AnalysisQueuePort(Protocol):
 
     def enqueue_asr(self, call_id: str) -> None: ...
     def enqueue_extraction(self, call_id: str) -> None: ...
+    def enqueue_live_asr(self, call_id: str) -> None: ...
 
 
 class NullAnalysisQueue:
@@ -35,6 +37,9 @@ class NullAnalysisQueue:
         return None
 
     def enqueue_extraction(self, call_id: str) -> None:
+        return None
+
+    def enqueue_live_asr(self, call_id: str) -> None:
         return None
 
 
@@ -63,6 +68,9 @@ class CeleryAnalysisQueue:
 
     def enqueue_extraction(self, call_id: str) -> None:
         self._send(AI_TASK, "ai", call_id)
+
+    def enqueue_live_asr(self, call_id: str) -> None:
+        self._send(LIVE_ASR_TASK, "asr-live", call_id)
 
     def _send(self, task: str, queue: str, call_id: str) -> None:
         try:
