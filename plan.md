@@ -730,6 +730,28 @@ POST /calls/{call_id}/audio?leg=operator     # одна нога VoIP (?leg=clie
      &duration_sec=123
 ```
 
+### Приём live‑аудио (WS, plan.md §12)
+
+Дополнительно к разовой загрузке клиент может стримить аудио во время звонка —
+тогда договорённости (live‑карточка) обновляются по ходу разговора:
+
+```http
+WS /api/ws/calls/{call_id}/audio?leg=operator|client|mixed
+Authorization: Bearer <jwt>
+```
+
+- Гейт — тот же: только владелец, только после `recording_started_at`
+  (`answered` + согласие); иначе handshake закрывается.
+- Кадры — сырой 8 кГц int16 PCM (base64 в Redis‑стриме `audio:call:{id}:{leg}`).
+- Роли берутся из канала (`operator`/`client`), диаризация не нужна.
+- `worker-asr-live` гонит T‑one стримингом и публикует `partial_transcript` сразу;
+  `worker-ai-live` инкрементально извлекает договорённости (debounce).
+- `agreement_detected` переиспользуется для новых **и** обновлённых договорённостей
+  (тот же `agreement.id`, растёт `version`): клиент делает **upsert по `id`**, а
+  не добавление. Схема событий остаётся `version: 1`.
+- Разовая загрузка записи остаётся для retention/аудита и как batch‑fallback;
+  live↔batch идемпотентны по `call_id`.
+
 ### Вебхуки Voice‑провайдера (МТС Exolve, §11.1)
 
 ```http

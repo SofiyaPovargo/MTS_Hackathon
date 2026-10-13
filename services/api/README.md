@@ -326,6 +326,20 @@ transcript / agreements instead of recomputing. The client upload
 is complete; `POST /calls/{id}/analyze` re-queues explicitly. The LLM part is off
 unless `LLM_BASE_URL`/`LLM_MODEL` are set (`llm_enabled`).
 
+**Live streaming.** In addition to the one-shot upload, the client can stream
+per-leg audio during the call to `WS /calls/{id}/audio?leg=operator|client|mixed`
+(JWT, owner-only, gated by `recording_started_at`). The API (ML-free) fans the
+8 kHz int16 PCM frames out to a Redis stream per leg; `worker-asr-live` runs
+T-one incrementally and publishes `partial_transcript` as phrases arrive, and
+`worker-ai-live` re-runs extraction (debounced by `LIVE_DEBOUNCE_SEC`) so the
+live card updates during the call. `agreement_detected` is reused for created
+*and* updated agreements (stable `agreement.id`, growing `version`) — the client
+upserts by id. The final recording upload stays the path for retention/audit and
+as the batch fallback; live and batch are idempotent by `call_id`.
+
+**Self-hosted LLM.** `ollama` runs as a compose service (model `qwen2.5:7b`,
+host cache mounted); the workers reach it at `http://ollama:11434/v1`.
+
 Run the T-one ASR server locally (optional; also reachable on the research
 Mac via Tailscale):
 

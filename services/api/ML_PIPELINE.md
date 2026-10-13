@@ -77,6 +77,29 @@ Media Stream
 - Дополнительно `CallSessionService` сам ставит задачу в очередь по событию
   `ended`, если запись уже загружена в S3 (`storage_url` начинается с `s3://`).
 
+### Live-путь (plan.md §12) — параллельно batch
+
+Аудио во время звонка клиент стримит по WS; batch остаётся fallback.
+
+1. **Ingest.** `WS /api/ws/calls/{call_id}/audio?leg=operator|client|mixed`
+   (`api/ws.py`, `services/live_audio.py`): JWT + owner + гейт
+   `recording_started_at`. API (ML-free) кладёт кадры 8 кГц int16 PCM (base64) в
+   Redis-стрим `audio:call:{call_id}:{leg}` и один раз ставит `stream_asr`.
+2. **worker-asr-live — `stream_asr(call_id)`** (очередь `asr-live`): читает
+   стримы ног, гонит T-one стриминговым методом `ToneASRClient.stream` (чанки на
+   вход, фразы колбэком), роль берётся из канала (`operator`/`client`), сегменты
+   дописываются в `transcripts`, `partial_transcript` публикуется сразу.
+3. **worker-ai-live — `stream_extract(call_id)`** (очередь `ai-live`):
+   `extract_incremental` вызывает `AgreementService.upsert_from_commitment`
+   (идентичность — fingerprint `type|owner|цитата`): новые создаём, изменённые
+   обновляем (`version`), подтверждённые/отклонённые не трогаем. Debounce —
+   `LIVE_DEBOUNCE_SEC`, финальный прогон в конце звонка. `agreement_detected`
+   эмитится на каждое изменение (клиент делает upsert по `agreement.id`).
+4. **Финализация** по `eof` ноги / `LIVE_MAX_SEC`: транскрипт `status=done`,
+   финальный extraction. Live не сохраняет аудио в S3 — финальную запись клиент
+   загружает в `POST /calls/{id}/audio` (retention/audit), batch остаётся
+   резервом; live↔batch идемпотентны по `call_id`.
+
 ## 4. Извлечение и валидация
 
 - `extraction/llm.py::InstructorLLMExtractor` — OpenAI-совместимый API +
@@ -88,7 +111,9 @@ Media Stream
   `domain/rules.py`: неоднозначность (`AmbiguityFlags`) важнее уверенности;
   ниже порога `CONFIDENCE_THRESHOLD` → `requires_review`; неоднозначно →
   `needs_clarification`. Относительные даты резолвит `domain/dates.py` по
-  `conversation_date` и таймзоне пользователя.
+  `conversation_date` и таймзоне пользователя **детерминированно**: валидация
+  перезаписывает дату LLM резолвером (AGENTS: «by Friday» решается в коде), а
+  расплывчатую фразу («к концу месяца») помечает `vague_deadline`.
 
 ## 5. Схемы и контракты
 
@@ -100,9 +125,12 @@ Media Stream
   `source_quote`, `audio_start`/`audio_end`, `confidence`, `ambiguity`, `status`
   (канонические `AgreementStatus`: `detected|requires_review|
   needs_clarification|confirmed|rejected`).
-- `asr/ports.py` — `ASRPort.transcribe(pcm)`, `TextPhrase`; `SAMPLE_RATE=8000`,
-  `CHUNK_SAMPLES=2400` (300 мс), `CHUNK_BYTES=4800`.
+- `asr/ports.py` — `ASRPort.transcribe(pcm)`, `StreamingASRPort.stream(chunks,
+  on_phrase)`, `TextPhrase`; `SAMPLE_RATE=8000`, `CHUNK_SAMPLES=2400` (300 мс),
+  `CHUNK_BYTES=4800`.
 - `diarization/ports.py` — `DiarizationPort.diarize(path)`.
+- `vad/ports.py` — `VadPort.speech_segments(pcm, sample_rate)`; `vad/silero.py` —
+  Silero-адаптер; `vad/trim.py` — обрезка краёв с сохранением таймлайна.
 
 ### Протокол T-one (`asr/tone.py`)
 
@@ -129,17 +157,26 @@ uv-проект, исключён из ruff/mypy.
 
 | Переменная | По умолчанию | Смысл |
 |---|---|---|
-| `ASR_WS_URL` | `ws://localhost:8080/api/ws` | адрес T-one WebSocket |
+| `ASR_WS_URL` | `ws://localhost:8080/api/ws` | адрес T-one WebSocket (в compose `ws://asr:8080/api/ws`) |
 | `HF_TOKEN` | — | read-only токен Hugging Face (gated pyannote) |
 | `DATA_DIR` | `data` | `data/audio`, `data/transcripts` для STT CLI |
+| `VAD_ENABLED` | `false` | включить Silero VAD (обрезка краёв перед ASR) |
+| `VAD_PAD_SEC` | `0.2` | паддинг вокруг речевых зон при обрезке |
+| `VAD_MIN_SPEECH_MS` / `VAD_MIN_SILENCE_MS` | `100` / `100` | пороги Silero VAD |
+| `LIVE_ASR_ENABLED` | `true` | live-стриминг ASR (иначе только batch) |
+| `LIVE_DEBOUNCE_SEC` | `20` | как часто перезапускать извлечение во время звонка |
+| `LIVE_MAX_SEC` | `3600` | страховочный лимит длительности live-стрима |
 | `CONFIDENCE_THRESHOLD` | `0.8` | ниже порога договорённость → `requires_review` |
 | `LLM_BASE_URL` | — | OpenAI-совместимый endpoint (Ollama/self-host) |
-| `LLM_MODEL` | — | модель; без обоих параметров extraction выключен |
-| `LLM_API_KEY` | — | ключ (для локального Ollama не нужен) |
+| `LLM_MODEL` | — | модель (self-host: `qwen2.5:7b`); без обоих параметров extraction выключен |
+| `LLM_API_KEY` | — | ключ (для локального Ollama — заглушка `ollama`) |
 
 T-one идёт в отдельном образе: `tinkoffcreditsystems/t-one:0.1.0`, профиль
-`ml`, порт 8080 (`docker compose --profile ml up -d asr`). Тяжёлые ML-зависимости
-(`numpy`, `soundfile`, `soxr`, `pyannote-audio`, `torch`, `instructor`, `openai`) —
+`ml`, порт 8080 (`docker compose --profile ml up -d asr`). LLM — self-host
+`ollama` (образ `ollama/ollama`, модель `qwen2.5:7b`, хостовый кэш монтируется
+в `/root/.ollama`). Live-воркеры — `worker-asr-live` (очередь `asr-live`) и
+`worker-ai-live` (`ai-live`). Тяжёлые ML-зависимости (`numpy`, `soundfile`,
+`soxr`, `pyannote-audio`, `silero-vad`, `torch`, `instructor`, `openai`) —
 в optional-группе `ml` (`uv sync --extra ml`); образ API остаётся лёгким.
 Внутри контейнеров адрес берётся по имени сервиса, не `localhost`.
 
@@ -148,26 +185,37 @@ T-one идёт в отдельном образе: `tinkoffcreditsystems/t-one:0
 ```bash
 cd services/api
 uv sync --extra ml                              # ML-зависимости и тесты
-docker compose --profile ml up -d asr           # T-one ASR (из корня репо)
 
-# распознать звонок: data/audio/<id>.wav → data/transcripts/<id>.json
+# из корня репо: T-one + self-host LLM + живые воркеры
+docker compose --profile ml up -d asr ollama worker-asr-live worker-ai-live
+
+# распознать звонок батчем: data/audio/<id>.wav -> data/transcripts/<id>.json
 uv run python -m app.ml.stt <id> --audio-dir data/audio --out-dir data/transcripts
 
-uv run pytest tests/ml                          # ASR, роли, валидация
+uv run pytest tests/ml                          # ASR (batch+stream), VAD, роли, валидация
 uv run pytest tests/integration/test_ml_pipeline.py   # конвейер в БД (нужны postgres+redis)
 ```
+
+Live-аудио приходит от клиента на `WS /api/ws/calls/{id}/audio?leg=…`; пока
+клиента нет, live-путь проверяется integration-тестом с фейковым streaming-ASR
+и реальным Redis-стримом.
 
 Флаги CLI: `--ws-url`, `--no-diarization`, `--audio-dir`, `--out-dir`.
 
 ### Тесты
 
-- `tests/ml/asr/test_tone_client.py` — протокол T-one против fake WS-сервера.
+- `tests/ml/asr/test_tone_client.py` — протокол T-one против fake WS-сервера
+  (`transcribe` и `stream`).
 - `tests/ml/stt/test_pipeline.py` — слияние с диаризацией, карта ролей, ресемплинг.
 - `tests/ml/stt/test_channels.py` — роли по каналам, фоллбек на диаризацию,
-  `unknown` без диаризации, стерео/mono декодирование, `role_source`.
-- `tests/ml/extraction/test_extraction.py` — валидатор, сервис и `extract_pair`.
+  `unknown` без диаризации, стерео/mono декодирование, `role_source`, VAD-обрезка.
+- `tests/ml/vad/test_trim.py` — обрезка краёв с сохранением таймлайна.
+- `tests/ml/live/test_live.py` — чтение Redis-стримов, маппинг ролей.
+- `tests/ml/extraction/test_extraction.py` — валидатор (вкл. детерминированные
+  даты), сервис и `extract_pair`.
 - `tests/integration/test_ml_pipeline.py` — каналы → транскрипт в БД → agreements
-  → события, идемпотентность, `POST /calls/{id}/analyze`.
+  → события, идемпотентность, `POST /calls/{id}/analyze`, live-путь (Redis-стрим
+  → транскрипт).
 
 ## 9. Безопасность и приватность
 
