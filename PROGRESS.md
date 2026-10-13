@@ -221,3 +221,5 @@ flutter test               # 53 теста (Dart-уровень, без Docker)
 - `7268635`/`156b6b5` — LLM-extractor (research) — PR #3
 - `071948d`/`eb0d40d` — Этап 4/5 (backend): Exolve-адаптер, consent-flow, WS-события — PR #4
 - `64b3fda`/`79bffed` — **Этап 6 (backend)**: канальные роли VoIP, прод-пайплайн ML, воркеры, `POST /calls/{id}/analyze` — PR #5
+- `3b3119c`/`d1948d5` — docs/team: статус ML-пайплайна, сплит Xivalor/Mav, `scripts/local-db.sh` — PR #6
+- `b7f2ccb` — **Этап 4 (mobile, Dart)**: порт `VoiceCallProvider` за DI + `CallApi`, `CallController`, зеркало стейт-машины, экран звонка (оверлей) + дозвон, mock-провайдер; analyze ✓, 53 теста — PR #7 (нативный SDK-адаптер — на машине с Android SDK/Xcode)
