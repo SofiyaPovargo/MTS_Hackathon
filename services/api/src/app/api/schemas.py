@@ -14,6 +14,8 @@ from app.domain.enums import (
     CallEvent,
     ConsentStatus,
     Owner,
+    ReminderChannel,
+    ReminderStatus,
     Role,
     SyncEntity,
     TaskPriority,
@@ -159,6 +161,39 @@ class TaskPatchRequest(BaseModel):
     status: TaskStatus | None = None
 
 
+class CalendarEventOut(BaseModel):
+    task_id: uuid.UUID
+    event_id: str
+    title: str
+    starts_at: datetime
+    ends_at: datetime
+
+
+class ReminderCreateRequest(BaseModel):
+    remind_at: datetime
+    channel: ReminderChannel = ReminderChannel.push
+
+
+class ReminderOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: uuid.UUID
+    task_id: uuid.UUID
+    remind_at: datetime
+    channel: ReminderChannel
+    status: ReminderStatus
+
+
+class MessageDraftOut(BaseModel):
+    """A draft only — never sent to the counterparty automatically."""
+
+    task_id: uuid.UUID
+    draft_id: str
+    phone: str
+    text: str
+    sent: bool = False
+
+
 class SyncChange(BaseModel):
     entity_type: str
     id: str
@@ -210,6 +245,20 @@ class ConsentOut(BaseModel):
     method: str
     granted_at: datetime | None
     withdrawn_at: datetime | None
+
+
+class CallEventEnvelope(BaseModel):
+    """Versioned WebSocket frame on ``/api/ws/calls/{call_id}``.
+
+    The ``payload`` shape depends on ``event`` (``partial_transcript``,
+    ``agreement_detected``, ``analysis_started``, ``call_ended``); see
+    ``plan.md`` §13.
+    """
+
+    version: int = 1
+    event: str
+    call_id: uuid.UUID
+    payload: dict[str, object] = Field(default_factory=dict)
 
 
 class ErrorBody(BaseModel):

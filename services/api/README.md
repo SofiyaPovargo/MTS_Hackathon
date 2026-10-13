@@ -12,18 +12,18 @@ Layered per `AGENTS.md`:
 
 ```
 src/app/
-  api/            HTTP routes, request/response schemas (Pydantic v2), dependencies
+  api/            HTTP routes, WebSocket endpoint, schemas (Pydantic v2), dependencies
   domain/         entities, enums, state machine, date/commitment rules (no IO)
-  services/       auth, call session, consent, agreement, task, sync, manager, events
+  services/       auth, call session, consent, agreement, task, schedule, sync, manager, events
   infrastructure/ SQLAlchemy models/repositories, Redis cache, JWT, S3 storage
-  integrations/   external ports: VoiceProviderPort (mock), outbound drafts
+  integrations/   external ports: VoiceProviderPort (mock + Exolve adapter), calendar/reminders/messaging
   ml/             research layer: ASR (T-one client), diarization (pyannote), STT pipeline
   migrations/     Alembic migrations
   worker.py       Celery entrypoint (queues: asr, ai, notifications)
   cli.py          `python -m app.cli seed` — demo team + users
 tests/
   unit/           date resolution, commitment rules, call state machine
-  integration/    auth, access, consent flow, agreements/tasks, sync, manager
+  integration/    auth, access, consent flow, agreements/tasks, schedule, sync, manager, WebSocket events
   ml/             T-one ASR client protocol, STT pipeline (roles, resample)
 ```
 
@@ -82,7 +82,16 @@ All settings come from the environment (`.env`, see `.env.example`). Key ones:
 | `DEV_OTP`             | —                    | fixed OTP accepted only in local/dev      |
 | `CONFIDENCE_THRESHOLD`| 0.8                  | below it an agreement is `requires_review`|
 | `CONSENT_MODE`        | notice               | `notice` \| `dtmf` \| `sms_link`          |
+| `VOICE_PROVIDER`      | mock                 | `mock` \| `exolve` (МТС Exolve adapter)   |
 | `VOICE_WEBHOOK_SECRET`| dev-voice-secret     | header checked on call webhooks           |
+| `EXOLVE_API_BASE_URL` | `https://api.exolve.ru` | Exolve API base                        |
+| `EXOLVE_API_KEY`      | —                    | Exolve application API key (Bearer)       |
+| `EXOLVE_SIP_RESOURCE_ID` | 0                 | SIP resource id used by `SetCallRecordState` |
+| `EXOLVE_CONSENT_NOTICE_FILE_ID` | —          | audio notice played to the caller (`file_to_A`) |
+| `MEDIA_INGEST_URL`    | `ws://…/api/ws/media` | where the client uploads the mixed call audio |
+| `CALENDAR_PROVIDER`   | ics                  | `ics` (in-app artifact)                   |
+| `REMINDERS_PROVIDER`  | local                | `local`                                   |
+| `MESSAGING_PROVIDER`  | draft                | `draft` (never sends)                     |
 | `ASR_WS_URL`          | `ws://localhost:8080/api/ws` | T-one streaming ASR WebSocket  |
 | `HF_TOKEN`            | —                    | read-only Hugging Face token (pyannote)   |
 | `DATA_DIR`            | `data`               | `data/audio`, `data/transcripts` for STT CLI |
@@ -134,6 +143,12 @@ Tasks
 | GET    | `/me/tasks`             | tasks created from confirmed agreements |
 | PATCH  | `/tasks/{id}`           | edit (status transitions validated) |
 | POST   | `/tasks/{id}/complete`  | mark done                           |
+| POST   | `/tasks/{id}/calendar`  | write the task into the calendar (explicit action) |
+| GET    | `/tasks/{id}/calendar.ics` | portable `.ics` download         |
+| POST   | `/tasks/{id}/reminders` | schedule a reminder (`remind_at` in the future) |
+| GET    | `/tasks/{id}/reminders` | list reminders for the task         |
+| POST   | `/reminders/{id}/cancel` | cancel a reminder                  |
+| POST   | `/tasks/{id}/message-draft` | draft a client message — never sent |
 
 Manager board (role + team membership enforced server-side)
 
@@ -155,7 +170,9 @@ Misc
 | method | path           | notes                  |
 | ------ | -------------- | ---------------------- |
 | GET    | `/healthz`     | DB-backed liveness     |
+| GET    | `/ws/events/schema` | WebSocket envelope schema + event list |
 | GET    | `/docs`        | OpenAPI (FastAPI)      |
+| WS     | `/ws/calls/{id}` | live call events (JWT, owner-only; see below) |
 
 ## Data model
 
@@ -191,7 +208,10 @@ Agreement statuses: `detected`, `requires_review`, `needs_clarification`,
 - **Manager access.** Manager endpoints verify both role and team membership;
   cross-team and cross-user data return 403/404. Users see only their own data.
 - **No external writes without confirmation.** Calendar/reminder/messaging
-  ports exist behind confirmation; nothing is sent automatically.
+  ports exist behind confirmation; nothing is sent automatically. Each is a
+  user-triggered action on a task whose agreement is `confirmed`
+  (`services/schedule.py`); the message endpoint only produces a draft
+  (`sent: false`), and the `.ics` download touches no external system.
 
 ## Consent flow on `call.answered`
 
@@ -206,6 +226,15 @@ Agreement statuses: `detected`, `requires_review`, `needs_clarification`,
 Modes are switched via `CONSENT_MODE`; the integration tests exercise
 notice, DTMF refusal and withdrawal.
 
+**МТС Exolve adapter** (`integrations/exolve.py`, `VOICE_PROVIDER=exolve`). The
+inbound API has no DTMF collection and exposes no server-side media stream, so
+for Exolve consent is `notice` (played to the caller via `file_to_A` in the
+call-control response) and the ML audio comes from the mobile client, which
+uploads the SDK's mixed stream to `MEDIA_INGEST_URL` (`open_media_stream()`
+returns that URL). The adapter maps Exolve progress notifications (`b/o/s/e`)
+to `CallEvent` and wraps the Call Record API (`SetCallRecordState`, `GetInfo`,
+`Download`). Decisions recorded in `plan.md` §11.1.
+
 ## ML pipeline (research, Stage 6 groundwork)
 
 Full description: [`ML_PIPELINE.md`](ML_PIPELINE.md) (target pipeline, what is
@@ -213,6 +242,9 @@ implemented, gaps, config, how to run, privacy).
 
 Streaming ASR (T-one, Russian telephony 8 kHz) + speaker diarization
 (pyannote) + transcript with `operator`/`client` roles.
+
+The audio stream arrives from the mobile client (`MEDIA_INGEST_URL`), not from
+the voice provider — see §11.1 of `plan.md`.
 
 ```
 src/app/ml/
@@ -296,10 +328,26 @@ Eval по gold: `services/api/research/03_extraction_eval.ipynb` (Recall/Precisi
 
 ## WebSocket events
 
-`services/events.py` provides the event hub (`CallEventMessage` persisted to
-Redis under `events:call:{id}` for late replay). Stage 6 wires it to the
-WebSocket endpoint. Known event types: `partial_transcript`,
-`agreement_detected`, `analysis_started`, `call_ended`.
+`/api/ws/calls/{call_id}` streams live call events; `services/events.py` is the
+hub (`CallEventMessage` persisted to Redis under `events:call:{id}` for replay,
+published on the same key for live delivery). Every frame is a versioned
+envelope (schema version 1):
+
+```json
+{"version": 1, "event": "agreement_detected", "call_id": "…", "payload": { … }}
+```
+
+| property        | value |
+| --------------- | ----- |
+| auth            | `Authorization: Bearer <access token>` **or** `?token=<access token>` (browsers) |
+| access          | call owner only — managers never receive audio/transcript |
+| handshake close | `4401` unauthorized · `4403` forbidden · `4404` unknown call |
+| replay          | persisted events are sent on connect, then live events follow |
+| event types     | `partial_transcript`, `agreement_detected`, `analysis_started`, `call_ended` |
+| contract        | `GET /ws/events/schema` (envelope JSON schema + event list, also in OpenAPI) |
+
+Event types are emitted by the ML workers (Stage 6, Track B), except
+`analysis_started` / `call_ended`, which the call session emits today.
 
 ## Workers
 
@@ -325,11 +373,16 @@ Covered rules: call state transitions, recording blocked without consent,
 relative date resolution, confidence threshold, manager/user access rights,
 sync idempotency, OTP login + refresh rotation + logout, consent notice/DTMF
 /withdrawal, agreement confirm→task, PATCH guards, cross-team 403s, the
-T-one ASR client protocol and the STT speaker/role merge.
+T-one ASR client protocol, the STT speaker/role merge, the WebSocket event
+stream (auth, ownership, replay, live delivery), the confirmed-only
+calendar/reminder/draft side effects (future-only reminders, draft never sent),
+and the МТС Exolve adapter (event mapping, routing body, Call Record API,
+notice/DTMF behaviour).
 
 ## Roadmap
 
-Stage order follows `plan.md`: this is Stage 2 (plus research ML groundwork).
-Staged placeholders: wiring the ML pipeline into the workers and the WebSocket
-endpoint (Stage 6), tasks/reminders creation beyond the confirm flow,
-calendar/`.ics` (Stage 9), and the mobile app (Stage 3+).
+Stage order follows `plan.md`: this is Stage 2 (plus research ML groundwork and
+the Track C voice/integration increments). Staged placeholders: wiring the ML
+pipeline into the workers (Stage 6), real third-party calendar/reminder
+adapters, the Exolve call-control/event webhook routes and end-to-end call
+wiring (`plan.md` §11.1), and the mobile app (Stage 3+).

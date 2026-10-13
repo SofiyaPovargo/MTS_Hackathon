@@ -598,6 +598,37 @@ Voice Provider
 | Пользователь A | Только у B | PSTN → номер компании → App | Да, у B |
 | Любой | Ни у кого | Обычный сотовый звонок | Нет |
 
+### 11.1. Voice‑провайдер: МТС Exolve (решение Этапа 1)
+
+Выбран **МТС Exolve**. Соответствие `VoiceProviderPort` и API (сверено с
+docs.exolve.ru):
+
+| Возможность | API Exolve |
+|---|---|
+| Входящие, сценарий по URL (call control) | переадресация входящих на URL: Exolve POST‑ит `{sip_id, numberA, call_sid}`, мы отвечаем JSON‑RPC с маршрутом на SIP ID пользователя |
+| Исходящие на обычные номера | Voice API / Callback API |
+| Запись разговора | Call Record API: `POST /sip/v1/SetCallRecordState`, `POST /statistics/call-record/v1/GetInfo`, `GET /statistics/download/{uid}` |
+| События звонка (webhook) | Statistics API: Inbound Call Events — `type` `b` (Begin/A), `o` (Originate/B), `s` (Start/B ответил), `h`, `e` (End), `crr` (запись готова) |
+| Уведомление собеседнику (согласие) | `file_to_A` в ответе call control — проигрывается вызывающему |
+| Мобильный клиент | Mobile SDK (Android, iOS, Flutter) |
+| Транскрибация (альтернатива своему ASR) | Call Transcribation / Speech Analytics |
+
+**Два решения по итогам сверки API (трек C):**
+
+1. **Аудио в ML‑пайплайн идёт от мобильного клиента.** У Exolve нет серверного
+   медиапотока (WebSocket/RTP нам не отдаётся), поэтому `open_media_stream()`
+   возвращает ingest‑URL (`MEDIA_INGEST_URL`), на который приложение льёт
+   смикшированный SDK‑поток. Пайплайн §12 не меняется — меняется только источник
+   `Media Stream`.
+2. **Согласие собеседника — `notice` + продолжение разговора.** Сбора DTMF в
+   inbound‑API Exolve нет, поэтому для Exolve `CONSENT_MODE=notice`: текст
+   уведомления проигрывается через `file_to_A`, факт согласия пишется в
+   `consents`. Режим `dtmf` остаётся для провайдеров, которые его поддерживают.
+
+Интеграция — адаптер за `VoiceProviderPort` (`integrations/exolve.py`); ML‑пайплайн
+и мобильный UI не меняются. Ключи/номера — только из `.env` (`EXOLVE_*`), в
+репозиторий не коммитятся.
+
 ## 12. ИИ‑пайплайн
 
 ```text
@@ -680,6 +711,20 @@ PATCH /tasks/{task_id}
 POST /tasks/{task_id}/complete
 ```
 
+### Календарь, напоминания, черновик (только после подтверждения)
+
+Действия пользователя по задаче из `confirmed`-договорённости. Ничего не
+создаётся автоматически, сообщение только черновик.
+
+```http
+POST /tasks/{task_id}/calendar        # записать в календарь (порт)
+GET  /tasks/{task_id}/calendar.ics    # переносимый .ics
+POST /tasks/{task_id}/reminders       # {remind_at, channel}
+GET  /tasks/{task_id}/reminders
+POST /reminders/{reminder_id}/cancel
+POST /tasks/{task_id}/message-draft   # черновик клиенту, sent: false
+```
+
 ### Доска менеджера
 
 ```http
@@ -690,38 +735,65 @@ GET /manager/team/members
 
 ### WebSocket‑события
 
-```json
-{
-  "event": "partial_transcript",
-  "call_id": "CALL-771",
-  "speaker": "client",
-  "text": "Хорошо, пришлите КП до пятницы"
-}
-```
+Транспорт: `GET /api/ws/calls/{call_id}` (WebSocket). Аутентификация — JWT
+access‑токен в заголовке `Authorization: Bearer <token>` (мобильный) или в query
+`?token=<token>` (браузер). Подписаться может только владелец звонка; менеджер
+транскрипт и аудио не получает. Коды закрытия рукопожатия: `4401`
+(не авторизован), `4403` (чужой звонок), `4404` (звонок не найден).
+
+Схема событий версионирована: каждый кадр — конверт `version: 1`, при
+несовместимом изменении версия увеличивается. Клиент сверяется с
+`GET /api/ws/events/schema`. При подключении сначала отдаются сохранённые
+события (replay), затем живые; на стыке дубликаты не отправляются.
+
+| event | payload |
+|---|---|
+| `partial_transcript` | `speaker` (`user` \| `client`), `text` |
+| `agreement_detected` | `agreement` (объект как в §12) |
+| `analysis_started` | `{}` |
+| `call_ended` | `duration_sec`, `summary` |
 
 ```json
 {
-  "event": "agreement_detected",
+  "version": 1,
+  "event": "partial_transcript",
   "call_id": "CALL-771",
-  "agreement": {
-    "id": "AGR-331",
-    "type": "send_document",
-    "object": "КП",
-    "owner": "user",
-    "due_date": "2026-10-16",
-    "confidence": 0.93,
-    "quote": "пришлите КП до пятницы",
-    "status": "requires_review"
+  "payload": {
+    "speaker": "client",
+    "text": "Хорошо, пришлите КП до пятницы"
   }
 }
 ```
 
 ```json
 {
+  "version": 1,
+  "event": "agreement_detected",
+  "call_id": "CALL-771",
+  "payload": {
+    "agreement": {
+      "id": "AGR-331",
+      "type": "send_document",
+      "object": "КП",
+      "owner": "user",
+      "due_date": "2026-10-16",
+      "confidence": 0.93,
+      "quote": "пришлите КП до пятницы",
+      "status": "requires_review"
+    }
+  }
+}
+```
+
+```json
+{
+  "version": 1,
   "event": "call_ended",
   "call_id": "CALL-771",
-  "duration_sec": 214,
-  "summary": "Клиент ждет КП до 16.10. Встреча не назначена."
+  "payload": {
+    "duration_sec": 214,
+    "summary": "Клиент ждет КП до 16.10. Встреча не назначена."
+  }
 }
 ```
 
@@ -792,7 +864,7 @@ GET /manager/team/members
 - Зафиксировать MVP‑сценарий.
 - Определить роли пользователя и менеджера.
 - Выбрать мобильный стек: React Native/Expo или Flutter.
-- Выбрать Voice‑провайдера.
+- Выбрать Voice‑провайдера — **МТС Exolve** (см. §11.1).
 - Создать репозиторий и структуру проекта.
 
 ### Этап 2. Серверная основа

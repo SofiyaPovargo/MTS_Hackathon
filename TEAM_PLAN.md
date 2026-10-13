@@ -104,19 +104,33 @@ Flutter SDK 3.47.7 / Dart 3.13.5, в репозиторий не коммити�
 порядке.
 
 1. **Voice-провайдер** (блокирует Этап 4 целиком — и backend, и мобильный):
-   - [ ] Сравнить 2–3 кандидата (входящий VoIP/PSTN, исходящие, webhook-события)
-   - [ ] Выбор зафиксировать в `plan.md` (это пункт Этапа 1)
-   - [ ] `VoiceProviderPort` (answer, hangup, play_notice, start_recording,
-     open_media_stream): реальный адаптер + мок для тестов/демо
+   - [x] Сравнить кандидатов (Exolve, Mango Office, Voximplant, Zadarma/Novofon)
+   - [x] Выбор зафиксирован в `plan.md` §11.1: **МТС Exolve**
+   - [x] Реальный адаптер `VoiceProviderPort` (Exolve) + мок для тестов/демо:
+     `integrations/exolve.py` — события (`b/o/s/e/h/crr`→`CallEvent`), тело
+     call-control (маршрут на SIP ID + `file_to_A`), Call Record API
+     (`SetCallRecordState`/`GetInfo`/`Download`); мок остаётся для тестов/демо
+   - [ ] Webhook-маршруты Exolve (call-control + события) и end-to-end связка
 2. **Consent-уведомление** (нужно Этапу 5): `play_notice` через провайдера,
    DTMF 1/2, запись события в `consents`
+   - [x] Адаптер Exolve: notice через `file_to_A` в ответе call-control
+   - [ ] Подключить к consent-flow; у Exolve нет сбора DTMF → режим `notice`
+     (`plan.md` §11.1), `dtmf` — за другими провайдерами
 3. **WebSocket-эндпоинт** (нужен и мобильному, и ML):
-   - [ ] `/ws` с JWT-аутентификацией, версия в схеме событий + OpenAPI
-   - [ ] `partial_transcript | agreement_detected | analysis_started | call_ended`
-   - [ ] Регенерация API-клиента после изменения контракта
+   - [x] `/api/ws/calls/{id}` с JWT-аутентификацией (header или `?token=`),
+     владелец звонка; версия в схеме событий (`version: 1`) + `GET /api/ws/events/schema`
+   - [x] `partial_transcript | agreement_detected | analysis_started | call_ended` —
+     replay из Redis + live pub/sub, дедуп на стыке
+   - [ ] Регенерация API-клиента после изменения контракта (клиента ещё нет, Этап 3)
 4. **Календарь/напоминания** (Этап 9, backend): `CalendarPort.create_event()` +
    `.ics` (dependency `icalendar` уже есть), `RemindersPort.create_reminder()`,
    только после подтверждения пользователя (правило продукта!)
+   - [x] `services/schedule.py`: календарь (`POST /tasks/{id}/calendar`),
+     `.ics` (`GET /tasks/{id}/calendar.ics`), напоминания
+     (`POST/GET /tasks/{id}/reminders`, `POST /reminders/{id}/cancel`),
+     черновик сообщения (`POST /tasks/{id}/message-draft`, `sent: false`)
+   - [x] Только для задач из `confirmed`-договорённости; `remind_at` — в будущем
+   - [ ] Реальные адаптеры календаря/напоминаний (за теми же портами)
 5. **Деплой** (не блокирует демо): VPS + тот же compose + Let's Encrypt;
    секреты из `.env`, не из коммитов.
 
@@ -201,10 +215,12 @@ plan.md), потом писать код. Общие файлы менять т�
 
 | Решение | Кто | Срок | Блокирует |
 |---|---|---|---|
-| Выбор voice-провайдера | Mav | до старта Этапа 4 | A: Этап 4, C: адаптер |
+| ~~Выбор voice-провайдера~~ **МТС Exolve** | Mav | ✅ решено | снят |
+| **Аудио в ML — от мобильного клиента** (`MEDIA_INGEST_URL`; у Exolve нет серверного медиапотока) | согласовано Mav/A/B | ✅ решено 2026-10-13 | Этап 6: ingest-эндпоинт (C) + загрузка SDK-потока (A) |
+| Consent для Exolve — только `notice` (нет сбора DTMF) | Mav | ✅ решено 2026-10-13 (`plan.md` §11.1) | Этап 5 у Exolve — notice |
 | Выбор LLM (самохостинг?) | Sofiya + согласование | до LLM-части | B |
 | Деплой-таргет (VPS) | Mav | ближе к демо | — (не блокер) |
-| Формат WS-событий (схема) | C (Mav), ревью B и A | до Этапа 7 UI | A: 7, B: эмиссия |
+| ~~Формат WS-событий (схема)~~ версия 1 + `GET /api/ws/events/schema` | C (Mav) | ✅ решено | снят |
 
 ---
 

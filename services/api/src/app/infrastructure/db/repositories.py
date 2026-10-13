@@ -17,6 +17,7 @@ from app.infrastructure.db.models import (
     Call,
     Consent,
     IdempotencyKey,
+    Reminder,
     Task,
     Team,
     User,
@@ -263,3 +264,19 @@ async def store_idempotent_response(
             response_body=response_body,
         )
     )
+
+
+# ---- reminders --------------------------------------------------------------
+
+
+async def get_reminder(session: AsyncSession, reminder_id: uuid.UUID) -> Reminder | None:
+    return cast("Reminder | None", await session.get(Reminder, reminder_id))
+
+
+async def list_reminders_for_task(
+    session: AsyncSession, task_id: uuid.UUID
+) -> Sequence[Reminder]:
+    result = await session.execute(
+        select(Reminder).where(Reminder.task_id == task_id).order_by(Reminder.remind_at)
+    )
+    return result.scalars().all()

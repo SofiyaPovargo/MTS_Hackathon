@@ -14,7 +14,7 @@
 
 | Этап | Статус | Что готово | Что не готово |
 |---|---|---|---|
-| 1. Подготовка | ✅ | MVP-сценарий, роли, стек Flutter, репо, структура | **выбор voice-провайдера** (пункт Этапа 1!) — открыт, блокер Этапа 4 |
+| 1. Подготовка | ✅ | MVP-сценарий, роли, стек Flutter, репо, структура; **voice-провайдер выбран: МТС Exolve** (§11.1) | — |
 | 2. Серверная основа | ✅ | Postgres/Redis/MinIO, модели, auth+роли, CRUD, docker compose, миграции; 69 тестов | — |
 | 3. Мобильная основа | ✅ | `apps/mobile` (Flutter): слои UI/App/Domain/Infra, OTP-auth + refresh, контакты за портом, личная доска, SQLite (tasks/agreements/outbox/sync_state/session), Repository + sync (pull→apply→push→ack→token), `--dart-define=API_BASE_URL`; analyze ✓, 33 теста | сборка/прогон на эмуляторе (нет Android SDK/Xcode в среде) — см. ограничение |
 | 4. Звонки | 🔶 | `VoiceProviderPort` (mock) + webhook-маршруты в backend; state machine | реальный провайдер (блокер), VoIP SDK, экран звонка, исходящие |
@@ -22,7 +22,7 @@
 | 6. Запись и анализ | 🔶 | research-слой `src/app/ml`: T-one ASR-клиент, pyannote-диаризация, STT-пайплайн (roles, resample); S3-хранилище; Celery-воркеры (заглушки) | VAD/чанкинг, worker-asr/ai задачи, LLM-извлечение, транскрипты в БД, WS-события |
 | 7. Договорённости и задачи | 🔶 | backend: agreement-статусы, confirm→task, PATCH-guards, audit; тесты | live-карточка (UI), напоминания, привязка к звонку в UI |
 | 8. Доски | 🔶 | backend: `/me/tasks`, `/manager/team/tasks|stats|members`, роли+team, тесты доступа | мобильные доски (личная и менеджерская), фильтры/сортировка, аналитика UI |
-| 9. Итог и календарь | 🔶 | черновик клиенту (`integrations/outbound.py`), `icalendar` в депсах, история звонков в БД | `CalendarPort`/`.ics` генерация, `RemindersPort`, резюме разговора, UI |
+| 9. Итог и календарь | 🔶 | backend: `schedule.py` — календарное событие/`.ics`/напоминания/черновик клиенту, только для confirmed-задач, тесты | резюме разговора, UI календаря/напоминаний, реальные адаптеры |
 | 10. Тестирование и демо | 🔶 | сквозное демо проверено: OTP → входящий → consent → задача → доска менеджера | тесты реальных звонков, 4G/обрыв WS, офлайн-синк, презентация |
 
 ---
@@ -32,6 +32,8 @@
 ### api/ — HTTP-слой (полный, из Этапа 2)
 - `routes.py` — все эндпоинты: `/auth/*`, `/me*`, `/calls*`, `/agreements*`,
   `/tasks*`, `/manager/team/*`, `/sync` GET/POST, `/healthz`
+- `ws.py` — WebSocket `/ws/calls/{id}` (JWT, owner-only, replay+live, схема v1)
+  + `GET /ws/events/schema`
 - `schemas.py` — Pydantic v2: UserOut, AuthResponse, CallOut, AgreementOut,
   TaskOut, SyncChange/Pull/Push/Result, ErrorBody
 - `dependencies.py` (auth/role deps), `errors.py` (единый формат ошибок)
@@ -53,12 +55,14 @@
 - `consent.py` — режимы notice/dtmf/sms_link; запись в `consents`
 - `agreement.py` — статусы, confirm→task, PATCH-guards (confirmed/rejected final)
 - `task.py` — статусы задач, complete
+- `schedule.py` — календарь/`.ics`, напоминания, черновик сообщения; только для
+  задач из `confirmed`-договорённости (порты за `Integrations`)
 - `sync.py` — delta pull (since-token), идемпотентный push (idempotency_key hash),
   конфликт → server version
 - `manager.py` — доска команды: роли+team_id проверяются на сервере
 - `access.py` — права user/manager
-- `events.py` — event hub в Redis (`events:call:{id}`), replayed для late joiners;
-  типы: `partial_transcript | agreement_detected | analysis_started | call_ended`
+- `events.py` — event hub в Redis (`events:call:{id}`): replay-список + pub/sub,
+  версия схемы 1, дедуп на стыке; типы: `partial_transcript | agreement_detected | analysis_started | call_ended`
 
 ### infrastructure/
 - `db/` — SQLAlchemy async: models, repositories, session; `migrations/` (Alembic,
@@ -67,8 +71,9 @@
 - `security.py` — JWT HS256
 
 ### integrations/ — внешние порты
-- `voice.py` — **VoiceProviderPort (mock)**; webhook-signature `VOICE_WEBHOOK_SECRET`
-- `outbound.py` — черновик сообщения клиенту (не отправляется автоматически — правило!)
+- `voice.py` — `VoiceProviderPort`, `MockVoiceProvider`, `voice_provider_factory` (`mock`/`exolve`); webhook-signature `VOICE_WEBHOOK_SECRET`
+- `exolve.py` — адаптер МТС Exolve: парсинг событий (`b/o/s/e/h/crr` → `CallEvent`), тело call-control (маршрут на SIP ID + `file_to_A`), Call Record API (`SetCallRecordState`/`GetInfo`/`Download`); `open_media_stream` → `MEDIA_INGEST_URL` (аудио льёт клиент), `collect_dtmf` → `None` (`CONSENT_MODE=notice`) — см. plan.md §11.1
+- `outbound.py` — календарь/напоминания/черновик клиенту (не отправляется автоматически — правило!); фабрики портов
 
 ### ml/ — research-слой (Этап 6 groundwork, уже в проде-структуре)
 - `asr/` — `ASRPort`, `ToneASRClient` (WS /api/ws, 8 кГц int16, chunking)
@@ -141,8 +146,8 @@ models, sync_models, ports), `application/` (Riverpod-контроллеры + p
 
 | Группа | Файлы | Что покрывают |
 |---|---|---|
-| unit (3) | test_dates, test_rules, test_state_machine | относительные даты, пороги, переходы звонка |
-| integration (6) | test_auth, test_access, test_call_consent, test_agreements_tasks, test_sync, test_manager | OTP/refresh, права ролей+команды, запись без consent, confirm→task, sync-идемпотентность |
+| unit (4) | test_dates, test_rules, test_state_machine, test_exolve | относительные даты, пороги, переходы звонка, Exolve (события, тело маршрута, Call Record API, порт) |
+| integration (8) | test_auth, test_access, test_call_consent, test_agreements_tasks, test_schedule, test_sync, test_manager, test_ws_events | OTP/refresh, права ролей+команды, запись без consent, confirm→task, календарь/напоминания/черновик (только confirmed), sync-идемпотентность, WS auth/ownership/replay/live |
 | ml (2) | test_tone_client, test_pipeline | протокол T-one, слияние ролей/ресамплинг |
 | mobile (7) | domain/models, infrastructure/local_stores, infrastructure/sync_engine, application/auth_controller, application/board_controller, application/contacts_controller, widget/app | парсинг моделей, SQLite-хранилища, цикл sync + идемпотентность/конфликт/ретраи, контроллеры, экраны |
 
@@ -180,9 +185,11 @@ flutter test               # 33 теста (Dart-уровень, без Docker)
 
 | Блокер | Влияние |
 |---|---|
-| Выбор voice-провайдера (Этап 1, остался открытым) | Этап 4 целиком + реальная запись |
+| ~~Выбор voice-провайдера~~ **МТС Exolve** (решено 2026-10-13, `plan.md` §11.1) | снят; Этап 4 — за webhook-маршрутами и VoIP SDK |
+| ~~Формат WS-событий~~ версия 1 + `GET /api/ws/events/schema` (трек C) | снят; мобильные/ML эмитят по контракту |
+| **Аудио в ML — от мобильного клиента** (`MEDIA_INGEST_URL`): у Exolve нет серверного медиапотока (решено 2026-10-13, §11.1) | Этап 6: нужен ingest-эндпоинт (backend) + загрузка SDK-потока (трек A) |
+| У Exolve нет сбора DTMF → `CONSENT_MODE=notice` (§11.1) | Этап 5: для Exolve только notice; `dtmf` — за другими провайдерами |
 | Выбор LLM (самохостинг предпочтителен) | Этап 6, LLM-часть |
-| Формат WS-событий | мобильная live-карточка (Этап 7) и эмиссия ML |
 
 ## История (для контекста)
 
