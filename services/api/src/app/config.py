@@ -66,6 +66,16 @@ class Settings(BaseSettings):
     # Data directory for the STT CLI (data/audio, data/transcripts).
     data_dir: Path = Field(default=Path("data"), alias="DATA_DIR")
 
+    # --- LLM extraction (optional) ---
+    # OpenAI-compatible API for commitment extraction. Local default: Ollama.
+    llm_api_key: str = Field(default="", alias="LLM_API_KEY")
+    llm_base_url: str = Field(default="", alias="LLM_BASE_URL")
+    llm_model: str = Field(default="", alias="LLM_MODEL")
+
+    @property
+    def llm_enabled(self) -> bool:
+        return bool(self.llm_base_url and self.llm_model)
+
 
 @lru_cache
 def get_settings() -> Settings:

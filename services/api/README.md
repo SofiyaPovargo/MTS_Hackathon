@@ -238,7 +238,7 @@ docker compose --profile ml up -d asr
 Install the ML extras for the pipeline and its tests:
 
 ```bash
-uv sync --extra ml        # adds numpy, soundfile, soxr, pyannote-audio, torch
+uv sync --extra ml        # adds numpy, soundfile, soxr, pyannote-audio, torch, instructor, openai
 ```
 
 Transcribe a call and save `data/transcripts/<id>.json`:
@@ -258,6 +258,41 @@ finalization, so `ToneASRClient` finishes on a silence timeout
 (`FINALIZE_TIMEOUT`) instead of waiting for the socket to close. `tone.py`,
 `pipeline.py` and the tests are protocol-level: no audio is stored, nothing is
 sent to the model unless the CLI is run explicitly.
+
+## LLM extraction
+
+Извлечение договорённостей (`src/app/ml/extraction/`) работает с любым
+OpenAI-совместимым API и отдаёт `app.domain.commitment.Commitment` — тот же
+контракт, что принимает Agreement Service.
+
+```bash
+# локально (Ollama)
+brew install ollama && ollama pull qwen2.5:7b
+# .env:
+#   LLM_API_KEY=ollama
+#   LLM_BASE_URL=http://localhost:11434/v1
+#   LLM_MODEL=qwen2.5:7b
+uv sync --extra ml   # instructor + openai (входит в ml extra)
+```
+
+Извлечение из транскрипта (rule-пас в `validation.py` сверяет `source_quote` с
+транскриптом, таймкоды — с длительностью звонка; расхождения -> `AmbiguityFlags`
+-> `needs_clarification`):
+
+```python
+from app.config import get_settings
+from app.ml.extraction.llm import InstructorLLMExtractor
+from app.ml.extraction.service import ExtractionService
+
+settings = get_settings()
+service = ExtractionService(
+    InstructorLLMExtractor(settings.llm_api_key, settings.llm_base_url, settings.llm_model)
+)
+commitments = await service.extract(context)  # list[Commitment]
+```
+
+Eval по gold: `services/api/research/03_extraction_eval.ipynb` (Recall/Precision
+по категориям).
 
 ## WebSocket events
 
