@@ -29,6 +29,7 @@ from app.api.dependencies import (
     require_voice_webhook,
 )
 from app.domain.errors import (
+    Conflict,
     NotFound,
     PermissionDenied,
     ValidationFailed,
@@ -192,6 +193,30 @@ async def call_provider_event(
     call = await calls.handle_provider_event(owner, call, payload.event, at=payload.at)
     await session.commit()
     return schemas.CallOut.model_validate(call, from_attributes=True)
+
+
+@router.post(
+    "/calls/{call_id}/analyze",
+    response_model=schemas.CallAnalyzeResponse,
+    status_code=202,
+)
+async def analyze_call(
+    call_id: uuid.UUID,
+    request: Request,
+    user: User = Depends(get_current_user),
+    session: AsyncSession = Depends(get_session),
+) -> schemas.CallAnalyzeResponse:
+    """Queue ASR + extraction for a recorded call and return immediately.
+
+    The pipeline is asynchronous (queue -> worker-asr -> worker-ai); this only
+    enqueues the job. Recording exists solely after ``answered`` + consent.
+    """
+    call = await get_call_or_404(session, call_id)
+    await _require_call_owner(user, call.user_id)
+    if call.recording_started_at is None:
+        raise Conflict("call was not recorded")
+    request.app.state.analysis_queue.enqueue_asr(str(call.id))
+    return schemas.CallAnalyzeResponse(call_id=call.id, status="queued")
 
 
 # ---- agreements ---------------------------------------------------------------

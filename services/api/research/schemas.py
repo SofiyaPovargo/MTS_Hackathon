@@ -19,7 +19,10 @@ class Owner(StrEnum):
 
 
 class CommitmentStatus(StrEnum):
-    proposed = "proposed"
+    """Канонические статусы договорённости (AGENTS.md / app.domain)."""
+
+    detected = "detected"
+    requires_review = "requires_review"
     needs_clarification = "needs_clarification"
     confirmed = "confirmed"
     rejected = "rejected"
@@ -45,7 +48,7 @@ class Commitment(BaseModel):
     audio_start: float = Field(ge=0)
     audio_end: float = Field(ge=0)
     confidence: float = Field(default=1.0, ge=0, le=1)
-    status: CommitmentStatus = CommitmentStatus.proposed
+    status: CommitmentStatus = CommitmentStatus.detected
     uncertainty: list[str] = Field(default_factory=list)
 
 
@@ -86,7 +89,7 @@ class ExpectedCommitment(BaseModel):
     due_time: time | None = None
     amount: Decimal | None = Field(default=None, gt=0)
     currency: str | None = None
-    status: CommitmentStatus = CommitmentStatus.proposed
+    status: CommitmentStatus = CommitmentStatus.detected
     uncertainty: list[str] = Field(default_factory=list)
 
 

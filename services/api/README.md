@@ -124,6 +124,7 @@ Calls (voice provider integration lives behind `VoiceProviderPort`)
 | GET    | `/calls`              | my calls                           |
 | GET    | `/calls/{id}`         | call detail (owner-only)           |
 | POST   | `/calls/{id}/events`  | provider webhook, signed by `VOICE_WEBHOOK_SECRET` |
+| POST   | `/calls/{id}/analyze` | queue ASR + extraction for a recorded call (202, returns `{call_id,status}`) |
 
 Agreements
 
@@ -240,25 +241,53 @@ to `CallEvent` and wraps the Call Record API (`SetCallRecordState`, `GetInfo`,
 Full description: [`ML_PIPELINE.md`](ML_PIPELINE.md) (target pipeline, what is
 implemented, gaps, config, how to run, privacy).
 
-Streaming ASR (T-one, Russian telephony 8 kHz) + speaker diarization
-(pyannote) + transcript with `operator`/`client` roles.
+Streaming ASR (T-one, Russian telephony 8 kHz) + speaker roles + LLM
+extraction, wired into the workers and the database.
 
 The audio stream arrives from the mobile client (`MEDIA_INGEST_URL`), not from
 the voice provider — see §11.1 of `plan.md`.
 
 ```
 src/app/ml/
+  pipeline.py   # orchestrator: audio -> transcript -> agreements + events
   asr/
     ports.py     # ASRPort, TextPhrase
     tone.py      # ToneASRClient (WebSocket /api/ws, 8 kHz int16 PCM)
   diarization/
     ports.py     # DiarizationPort, SpeakerSegment
     pyannote.py  # PyannoteDiarizer (gated speaker-diarization-3.1)
+  extraction/
+    llm.py       # InstructorLLMExtractor (OpenAI-compatible, Instructor)
+    service.py   # ExtractionService: LLM -> validate (raw + validated)
+    validation.py# rule-based checks vs the transcript
+    context.py   # ConversationContext
   stt/
-    schemas.py   # TranscriptSegment, Transcript
-    pipeline.py  # audio loading, speaker merge, operator/client roles
+    schemas.py   # TranscriptSegment, Transcript(+role_source)
+    pipeline.py  # channels->roles (VoIP); pyannote fallback (mono/PSTN)
     __main__.py  # CLI: python -m app.ml.stt <conversation_id>
 ```
+
+**Speaker roles.** For VoIP the recording is channel-separated (one leg per
+party): each leg is transcribed on its own and the role is known from the
+channel — no diarization. Only mono/PSTN audio (a single mixed stream) goes
+through pyannote; the first speaker becomes `operator`, the second `client`.
+`Transcript.role_source` records which path was used (`channel` | `diarization` |
+`unknown`) for audit.
+
+**Production pipeline** (`pipeline.py`, run by the workers):
+
+1. `worker-asr` (`process_asr`) — load the recording from MinIO/S3, transcribe,
+   persist the segmented transcript into `transcripts` (1:1 with the call),
+   publish `partial_transcript` events, then enqueue `worker-ai`.
+2. `worker-ai` (`run_llm_extraction`) — LLM extraction + rule-based validation,
+   create proposed `agreements` (raw/validated output kept apart in
+   `agreement_extractions`), publish `agreement_detected`.
+
+Both steps are idempotent by `call_id`: re-processing reuses the stored
+transcript / agreements instead of recomputing. Trigger the pipeline with
+`POST /calls/{id}/analyze` (or automatically once the provider uploads the
+recording). The LLM part is off unless `LLM_BASE_URL`/`LLM_MODEL` are set
+(`llm_enabled`).
 
 Run the T-one ASR server locally (optional; also reachable on the research
 Mac via Tailscale):

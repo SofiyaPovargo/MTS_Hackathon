@@ -192,7 +192,7 @@
     "audio_start": 12.18,
     "audio_end": 14.61,
     "confidence": 1.0,
-    "status": "proposed",
+    "status": "detected",
     "uncertainty": [
      "не ясно, когда именно будет готов заказ",
      "не указано, когда будет произведена связь"

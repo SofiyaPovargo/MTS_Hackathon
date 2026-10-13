@@ -23,6 +23,7 @@ from app.infrastructure.db.models import Call, User
 from app.integrations.voice import VoiceProviderPort
 from app.services.consent import ConsentService, require_recording_allowed
 from app.services.events import CallEventMessage
+from app.services.jobs import AnalysisQueuePort
 
 
 class EventsPort(Protocol):
@@ -39,12 +40,14 @@ class CallSessionService:
         consents: ConsentService,
         events: EventsPort,
         settings: Settings,
+        analysis: AnalysisQueuePort | None = None,
     ) -> None:
         self._session = session
         self._voice = voice
         self._consents = consents
         self._events = events
         self._settings = settings
+        self._analysis = analysis
         self._stream_id: str | None = None
 
     # -- creation -------------------------------------------------------------
@@ -104,6 +107,7 @@ class CallSessionService:
                     payload={"duration_sec": 0, "summary": call.summary},
                 )
             )
+            await self._maybe_enqueue_analysis(call)
         elif event is CallEvent.dropped:
             call.ended_at = timestamp
             await self._transition(call, CallStatus.failed, actor)
@@ -197,6 +201,20 @@ class CallSessionService:
         self._stream_id = stream_id
 
     # -- helpers --------------------------------------------------------------
+
+    async def _maybe_enqueue_analysis(self, call: Call) -> None:
+        """Kick off the ML pipeline once a real recording is in object storage.
+
+        Recording requires ``answered`` + consent (``recording_started_at`` is
+        only set after the consent gate), and the provider uploads the audio to
+        S3/MinIO; until the object is there the pipeline has nothing to read.
+        """
+        if self._analysis is None or call.recording_started_at is None:
+            return
+        audio = await repositories.get_call_audio(self._session, call.id)
+        if audio is None or not audio.storage_url.startswith("s3://"):
+            return
+        self._analysis.enqueue_asr(str(call.id))
 
     async def _transition(self, call: Call, target: CallStatus, actor: User) -> None:
         if is_terminal(call.status):
