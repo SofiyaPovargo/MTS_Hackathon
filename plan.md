@@ -690,38 +690,65 @@ GET /manager/team/members
 
 ### WebSocket‑события
 
-```json
-{
-  "event": "partial_transcript",
-  "call_id": "CALL-771",
-  "speaker": "client",
-  "text": "Хорошо, пришлите КП до пятницы"
-}
-```
+Транспорт: `GET /api/ws/calls/{call_id}` (WebSocket). Аутентификация — JWT
+access‑токен в заголовке `Authorization: Bearer <token>` (мобильный) или в query
+`?token=<token>` (браузер). Подписаться может только владелец звонка; менеджер
+транскрипт и аудио не получает. Коды закрытия рукопожатия: `4401`
+(не авторизован), `4403` (чужой звонок), `4404` (звонок не найден).
+
+Схема событий версионирована: каждый кадр — конверт `version: 1`, при
+несовместимом изменении версия увеличивается. Клиент сверяется с
+`GET /api/ws/events/schema`. При подключении сначала отдаются сохранённые
+события (replay), затем живые; на стыке дубликаты не отправляются.
+
+| event | payload |
+|---|---|
+| `partial_transcript` | `speaker` (`user` \| `client`), `text` |
+| `agreement_detected` | `agreement` (объект как в §12) |
+| `analysis_started` | `{}` |
+| `call_ended` | `duration_sec`, `summary` |
 
 ```json
 {
-  "event": "agreement_detected",
+  "version": 1,
+  "event": "partial_transcript",
   "call_id": "CALL-771",
-  "agreement": {
-    "id": "AGR-331",
-    "type": "send_document",
-    "object": "КП",
-    "owner": "user",
-    "due_date": "2026-10-16",
-    "confidence": 0.93,
-    "quote": "пришлите КП до пятницы",
-    "status": "requires_review"
+  "payload": {
+    "speaker": "client",
+    "text": "Хорошо, пришлите КП до пятницы"
   }
 }
 ```
 
 ```json
 {
+  "version": 1,
+  "event": "agreement_detected",
+  "call_id": "CALL-771",
+  "payload": {
+    "agreement": {
+      "id": "AGR-331",
+      "type": "send_document",
+      "object": "КП",
+      "owner": "user",
+      "due_date": "2026-10-16",
+      "confidence": 0.93,
+      "quote": "пришлите КП до пятницы",
+      "status": "requires_review"
+    }
+  }
+}
+```
+
+```json
+{
+  "version": 1,
   "event": "call_ended",
   "call_id": "CALL-771",
-  "duration_sec": 214,
-  "summary": "Клиент ждет КП до 16.10. Встреча не назначена."
+  "payload": {
+    "duration_sec": 214,
+    "summary": "Клиент ждет КП до 16.10. Встреча не назначена."
+  }
 }
 ```
 
