@@ -119,6 +119,78 @@ pytest 74 passed), ML-исследование (ASR T-one + диаризация
 
 ---
 
+## Старт работы — по шагам (для каждого)
+
+Общие ветки созданы и запушены в origin (от `development`, коммит `39ac850`):
+`track/mobile` (Xivalor), `track/ml` (Sofiya), `track/backend-voice` (Mav).
+
+### Клонировать и взять свою ветку
+
+```bash
+git clone git@github.com:SofiyaPovargo/MTS_Hackathon.git
+cd MTS_Hackathon
+git checkout track/<твоя>        # см. свою ветку ниже
+git pull origin track/<твоя>
+```
+
+### Xivalor — track/mobile (мобильное приложение)
+
+1. Flutter: нужен SDK 3.47.7 / Dart 3.13.5. На dev-машине уже стоит
+   (`/home/dd/flutter`); на своей: `flutter_linux_3.47.7-stable.tar.xz` от
+   storage.googleapis.com (stable channel, 3.47.7).
+2. Первый шаг: `cd apps # (создать, если нет)` → `flutter create --platforms=android,ios --org ru.mts mobile`
+   → реализовать Этап 3 (чек-лист выше). Бэкенд для проверки: `docker compose up -d`
+   (в корне репо), API уже живой.
+3. Гейты: `cd apps/mobile && flutter analyze && flutter test`.
+4. PR: ветка `track/mobile` → `development`, ревьюер **Mav** (контракты API/WS).
+
+### Sofiya — track/ml (ML и анализ)
+
+1. `cd services/api && uv sync` (появится всё из `uv.lock`; numpy/soundfile/soxr —
+   dev-группа уже входит).
+2. Первый шаг: VAD/чанкинг + задача `worker-asr` на существующем research-слое
+   `src/app/ml`; тестовые wav — `research/` (генератор уже есть).
+3. Гейты: `uv run ruff check . && uv run mypy . && uv run pytest`
+   (интеграционные требуют `docker compose up -d postgres redis`).
+4. PR: `track/ml` → `development`, ревьюер **Mav** (места пересечения:
+   events/worker), **Xivalor** — если трогаешь формат WS-событий.
+
+### Mav — track/backend-voice (backend, voice и интеграции)
+
+1. Первым делом (блокер!): выбор voice-провайдера — сравнение 2–3 кандидатов,
+   решение зафиксировать в `plan.md` (пункт Этапа 1).
+2. Потом: реальный адаптер `VoiceProviderPort` (за моком), WebSocket-эндпоинт
+   `/ws` (JWT, схема событий в OpenAPI), consent-уведомление, календарь/.ics.
+3. Гейты: те же, что у Sofiya.
+4. PR: `track/backend-voice` → `development`, ревьюер **Sofiya** (ML-сторона
+   событий) / **Xivalor** (клиент после регенерации из OpenAPI).
+
+### Как поддерживать ветку в актуальном состоянии
+
+```bash
+git fetch origin
+git merge origin/development     # часто, пока «свежо» — меньше конфликтов
+# прогнать гейты, закоммитить, запушить
+git push origin track/<твоя>
+```
+
+### Флоу на каждый PR
+
+1. Коммиты в свою track-ветку (по задачам — можно подветками, но проще прямо в трек).
+2. `git merge origin/development` → гейты зелёные.
+3. PR → `development` с описанием: что сделано / как проверить / что трогает у других.
+4. Минимум 1 ревью от назначенного человека (см. выше), конфликты разруливает автор.
+5. Мерж → отметить галочки в `PROGRESS.md` (это тоже PR или расскоммитить сразу в development).
+
+### Где пересекаются track/ml и track/backend-voice
+
+`services/events.py`, `worker.py`, `app/api/routes.py`, `docker-compose.yml`,
+`pyproject.toml`. Правило: **сначала договориться о схеме WS-событий** (записать в
+plan.md), потом писать код. Общие файлы менять только после `git merge origin/development`,
+иначе будет больно.
+
+---
+
 ## Открытые решения (блокеры)
 
 | Решение | Кто | Срок | Блокирует |
