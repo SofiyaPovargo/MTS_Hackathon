@@ -7,8 +7,8 @@ import json
 import pytest
 from websockets.asyncio.server import ServerConnection, serve
 
-from api.ml.asr.ports import CHUNK_BYTES
-from api.ml.asr.tone import ToneASRClient
+from app.ml.asr.ports import CHUNK_BYTES
+from app.ml.asr.tone import ToneASRClient
 
 
 async def _fake_tone_handler(websocket: ServerConnection) -> None:

@@ -1,0 +1,265 @@
+"""Thin data-access layer. Business rules live in ``app.domain``."""
+
+from __future__ import annotations
+
+import uuid
+from collections.abc import Sequence
+from typing import Any, cast
+
+from sqlalchemy import Select, select
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from app.domain.enums import ConsentSubjectType, ConsentType
+from app.infrastructure.db.models import (
+    Agreement,
+    AgreementEdit,
+    AuditLog,
+    Call,
+    Consent,
+    IdempotencyKey,
+    Task,
+    Team,
+    User,
+)
+
+USER_LIST_COLUMNS = (
+    User.id,
+    User.phone,
+    User.full_name,
+    User.role,
+    User.team_id,
+    User.timezone,
+)
+
+
+# ---- users ------------------------------------------------------------------
+
+
+async def get_user_by_phone(session: AsyncSession, phone: str) -> User | None:
+    result = await session.execute(select(User).where(User.phone == phone))
+    return result.scalar_one_or_none()
+
+
+async def get_user(session: AsyncSession, user_id: uuid.UUID) -> User | None:
+    return cast("User | None", await session.get(User, user_id))
+
+
+async def get_team(session: AsyncSession, team_id: uuid.UUID) -> Team | None:
+    return cast("Team | None", await session.get(Team, team_id))
+
+
+async def list_team_members(session: AsyncSession, team_id: uuid.UUID) -> Sequence[User]:
+    result = await session.execute(
+        select(User).where(User.team_id == team_id).order_by(User.full_name)
+    )
+    return result.scalars().all()
+
+
+# ---- calls ------------------------------------------------------------------
+
+
+async def get_call(session: AsyncSession, call_id: uuid.UUID) -> Call | None:
+    return cast("Call | None", await session.get(Call, call_id))
+
+
+async def list_calls(session: AsyncSession, user_id: uuid.UUID, *, limit: int = 100) -> Sequence[Call]:
+    result = await session.execute(
+        select(Call).where(Call.user_id == user_id).order_by(Call.created_at.desc()).limit(limit)
+    )
+    return result.scalars().all()
+
+
+# ---- agreements -------------------------------------------------------------
+
+
+async def get_agreement(session: AsyncSession, agreement_id: uuid.UUID) -> Agreement | None:
+    return cast("Agreement | None", await session.get(Agreement, agreement_id))
+
+
+async def list_agreements_for_call(
+    session: AsyncSession, call_id: uuid.UUID
+) -> Sequence[Agreement]:
+    result = await session.execute(
+        select(Agreement).where(Agreement.call_id == call_id).order_by(Agreement.created_at)
+    )
+    return result.scalars().all()
+
+
+async def list_agreements_for_user(
+    session: AsyncSession, user_id: uuid.UUID, *, limit: int = 200
+) -> Sequence[Agreement]:
+    result = await session.execute(
+        select(Agreement)
+        .join(Call, Call.id == Agreement.call_id)
+        .where(Call.user_id == user_id)
+        .order_by(Agreement.updated_at.desc())
+        .limit(limit)
+    )
+    return result.scalars().all()
+
+
+async def record_agreement_edit(
+    session: AsyncSession,
+    *,
+    agreement_id: uuid.UUID,
+    actor_user_id: uuid.UUID | None,
+    changes: dict[str, object],
+) -> None:
+    session.add(AgreementEdit(agreement_id=agreement_id, actor_user_id=actor_user_id, changes=changes))
+
+
+# ---- tasks ------------------------------------------------------------------
+
+
+async def get_task(session: AsyncSession, task_id: uuid.UUID) -> Task | None:
+    return cast("Task | None", await session.get(Task, task_id))
+
+
+async def list_tasks_for_user(
+    session: AsyncSession, user_id: uuid.UUID, *, limit: int = 500
+) -> Sequence[Task]:
+    result = await session.execute(
+        select(Task)
+        .where(Task.assignee_user_id == user_id)
+        .order_by(Task.due_date.asc().nulls_last(), Task.created_at.desc())
+        .limit(limit)
+    )
+    return result.scalars().all()
+
+
+def _task_team_statement(team_id: uuid.UUID) -> Select[Any]:
+    return (
+        select(Task)
+        .join(User, User.id == Task.assignee_user_id)
+        .where(User.team_id == team_id)
+    )
+
+
+async def list_tasks_for_team(
+    session: AsyncSession,
+    team_id: uuid.UUID,
+    *,
+    user_id: uuid.UUID | None = None,
+    status: str | None = None,
+    due_before: str | None = None,
+) -> Sequence[Task]:
+    statement = _task_team_statement(team_id)
+    if user_id is not None:
+        statement = statement.where(Task.assignee_user_id == user_id)
+    if status is not None:
+        statement = statement.where(Task.status == status)
+    if due_before is not None:
+        statement = statement.where(Task.due_date <= due_before)
+    result = await session.execute(
+        statement.order_by(Task.due_date.asc().nulls_last(), Task.created_at.desc())
+    )
+    return cast("Sequence[Task]", result.scalars().all())
+
+
+async def count_tasks_for_team(
+    session: AsyncSession, team_id: uuid.UUID, user_id: uuid.UUID | None = None
+) -> int:
+    statement = _task_team_statement(team_id)
+    if user_id is not None:
+        statement = statement.where(Task.assignee_user_id == user_id)
+    result = await session.execute(statement)
+    return len(result.scalars().all())
+
+
+# ---- consents ---------------------------------------------------------------
+
+
+async def latest_consent(
+    session: AsyncSession,
+    *,
+    user_id: uuid.UUID,
+    subject_type: ConsentSubjectType,
+    consent_type: ConsentType,
+) -> Consent | None:
+    result = await session.execute(
+        select(Consent)
+        .where(
+            Consent.user_id == user_id,
+            Consent.subject_type == subject_type,
+            Consent.consent_type == consent_type,
+        )
+        .order_by(Consent.created_at.desc())
+        .limit(1)
+    )
+    return result.scalar_one_or_none()
+
+
+async def latest_call_consent(
+    session: AsyncSession, *, call_id: uuid.UUID, consent_type: ConsentType
+) -> Consent | None:
+    result = await session.execute(
+        select(Consent)
+        .where(
+            Consent.call_id == call_id,
+            Consent.consent_type == consent_type,
+        )
+        .order_by(Consent.created_at.desc())
+        .limit(1)
+    )
+    return result.scalar_one_or_none()
+
+
+# ---- audit ------------------------------------------------------------------
+
+
+async def record_audit(
+    session: AsyncSession,
+    *,
+    entity_type: str,
+    entity_id: uuid.UUID,
+    action: str,
+    actor_user_id: uuid.UUID | None,
+    payload: dict[str, object] | None = None,
+) -> None:
+    session.add(
+        AuditLog(
+            entity_type=entity_type,
+            entity_id=entity_id,
+            actor_user_id=actor_user_id,
+            action=action,
+            payload=payload,
+        )
+    )
+
+
+# ---- idempotency ------------------------------------------------------------
+
+
+async def get_idempotent_response(
+    session: AsyncSession, *, user_id: uuid.UUID, scope: str, key: str
+) -> IdempotencyKey | None:
+    result = await session.execute(
+        select(IdempotencyKey).where(
+            IdempotencyKey.user_id == user_id,
+            IdempotencyKey.scope == scope,
+            IdempotencyKey.key == key,
+        )
+    )
+    return result.scalar_one_or_none()
+
+
+async def store_idempotent_response(
+    session: AsyncSession,
+    *,
+    user_id: uuid.UUID,
+    scope: str,
+    key: str,
+    request_hash: str,
+    response_status: int,
+    response_body: dict[str, object],
+) -> None:
+    session.add(
+        IdempotencyKey(
+            user_id=user_id,
+            scope=scope,
+            key=key,
+            request_hash=request_hash,
+            response_status=response_status,
+            response_body=response_body,
+        )
+    )

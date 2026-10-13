@@ -1,0 +1,16 @@
+# Development overrides: open ports so host tools and the mobile app can reach
+# the stack. These ports are NOT published in production compose.
+services:
+  api:
+    ports:
+      - "8000:8000"
+  postgres:
+    ports:
+      - "5432:5432"
+  redis:
+    ports:
+      - "6379:6379"
+  minio:
+    ports:
+      - "9000:9000"
+      - "9001:9001"

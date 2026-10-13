@@ -2,9 +2,11 @@
 
 from __future__ import annotations
 
-from api.ml.asr.ports import TextPhrase
-from api.ml.diarization.ports import SpeakerSegment
-from api.ml.stt.pipeline import build_role_map, merge, read_phone_pcm
+from pathlib import Path
+
+from app.ml.asr.ports import TextPhrase
+from app.ml.diarization.ports import SpeakerSegment
+from app.ml.stt.pipeline import build_role_map, merge, read_phone_pcm
 
 
 def test_merge_assigns_speaker_by_max_overlap() -> None:
@@ -40,9 +42,8 @@ def test_merge_unknown_when_no_diary() -> None:
     assert segments[0].speaker == "unknown"
 
 
-def test_read_phone_pcm_resamples_to_8k() -> None:
+def test_read_phone_pcm_resamples_to_8k(tmp_path: Path) -> None:
     import io
-    from pathlib import Path
 
     import numpy as np
     import soundfile as sf  # type: ignore[import-untyped]
@@ -51,7 +52,7 @@ def test_read_phone_pcm_resamples_to_8k() -> None:
     sf.write(buffer, np.zeros(16_000, dtype=np.float32), 16_000, format="WAV")
     buffer.seek(0)
 
-    path = Path("/tmp/_read_phone_pcm_test.wav")
+    path = tmp_path / "phone.wav"
     path.write_bytes(buffer.read())
 
     pcm = read_phone_pcm(path)

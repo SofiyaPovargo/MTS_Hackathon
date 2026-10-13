@@ -1,23 +1,146 @@
+# Server-side stack. Only nginx is published to the outside; everything else is
+# reached by service name inside the compose network.
+# Dev ports are opened in docker-compose.override.yml (never in production).
 services:
-  db:
+  postgres:
     image: postgres:16
     restart: unless-stopped
     env_file: .env
-    ports:
-      - "5432:5432"
+    environment:
+      DATABASE_URL: postgresql://${POSTGRES_USER:-app}:${POSTGRES_PASSWORD:-app}@postgres:5432/${POSTGRES_DB:-agreements}
     volumes:
-      - pgdata:/var/lib/postgresql/data
+      - postgres_data:/var/lib/postgresql/data
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U $$POSTGRES_USER -d $$POSTGRES_DB"]
       interval: 10s
       timeout: 5s
       retries: 5
 
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  minio:
+    # MinIO removed its public images (minio/minio and quay.io/minio/minio are
+    # gone). bitnamilegacy/minio is the maintained Docker Hub build; its
+    # entrypoint already serves /bitnami/minio/data on ports 9000/9001.
+    image: bitnamilegacy/minio:latest
+    restart: unless-stopped
+    environment:
+      MINIO_ROOT_USER: ${S3_ACCESS_KEY:-minio}
+      MINIO_ROOT_PASSWORD: ${S3_SECRET_KEY:-minio123}
+    volumes:
+      - minio_data:/bitnami/minio/data
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  migrate:
+    build:
+      context: services/api
+      target: base
+    env_file: .env
+    environment:
+      DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-app}:${POSTGRES_PASSWORD:-app}@postgres:5432/${POSTGRES_DB:-agreements}
+    command: ["uv", "run", "alembic", "upgrade", "head"]
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  api:
+    build:
+      context: services/api
+      target: api
+    env_file: .env
+    environment:
+      DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-app}:${POSTGRES_PASSWORD:-app}@postgres:5432/${POSTGRES_DB:-agreements}
+      REDIS_URL: redis://redis:6379/0
+      S3_ENDPOINT: http://minio:9000
+    command: ["uv", "run", "uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      minio:
+        condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
+
+  worker-asr:
+    build:
+      context: services/api
+      target: worker
+    env_file: .env
+    environment:
+      DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-app}:${POSTGRES_PASSWORD:-app}@postgres:5432/${POSTGRES_DB:-agreements}
+      REDIS_URL: redis://redis:6379/0
+    command: ["uv", "run", "celery", "-A", "app.worker", "worker", "-Q", "asr", "-l", "info"]
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
+  worker-ai:
+    build:
+      context: services/api
+      target: worker
+    env_file: .env
+    environment:
+      DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-app}:${POSTGRES_PASSWORD:-app}@postgres:5432/${POSTGRES_DB:-agreements}
+      REDIS_URL: redis://redis:6379/0
+    command: ["uv", "run", "celery", "-A", "app.worker", "worker", "-Q", "ai", "-l", "info"]
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
+  worker-notifications:
+    build:
+      context: services/api
+      target: worker
+    env_file: .env
+    environment:
+      DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-app}:${POSTGRES_PASSWORD:-app}@postgres:5432/${POSTGRES_DB:-agreements}
+      REDIS_URL: redis://redis:6379/0
+    command: ["uv", "run", "celery", "-A", "app.worker", "worker", "-Q", "notifications", "-l", "info"]
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
+  # Optional: T-one streaming ASR server (research). Not part of the default MVP
+  # stack; start it explicitly with: docker compose --profile ml up -d asr
+  # The STT CLI talks to it via ASR_WS_URL (default ws://localhost:8080/api/ws).
   asr:
     image: tinkoffcreditsystems/t-one:0.1.0
     restart: unless-stopped
+    profiles: ["ml"]
     ports:
       - "8080:8080"
 
+  nginx:
+    build:
+      context: services/nginx
+    ports:
+      - "80:80"
+      - "443:443"
+    depends_on:
+      - api
+
 volumes:
-  pgdata:
+  postgres_data:
+  redis_data:
+  minio_data:
