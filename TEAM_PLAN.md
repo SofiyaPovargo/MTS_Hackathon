@@ -1,8 +1,9 @@
 # План командной работы (распараллеливание)
 
-Статус на 2026-10-13: Этапы 1–2 из `plan.md` **готовы и зелёные**, **Этап 3
-(мобильная основа) реализован** в ветке `track/mobile` (flutter analyze ✓,
-flutter test 33 passed). **Этап 6, backend-часть ML-пайплайна, слит в
+Статус на 2026-10-13: Этапы 1–2 из `plan.md` **готовы и зелёные**, **Этап 3 и
+Этап 4 (mobile) реализованы** — основа в `track/mobile`, звонки (Dart-уровень)
+в `track/mobile-calls`: `flutter analyze` ✓, `flutter test` **53 passed**.
+**Этап 6, backend-часть ML-пайплайна, слит в
 `development`** (PR #5): роли из каналов VoIP, воркеры `process_asr`/
 `run_llm_extraction`, триггер `POST /calls/{id}/analyze`; гейты ruff ✓, mypy ✓,
 **pytest 135 passed**. Команда: **Sofiya** (ML), **Mav** (backend), **Xivalor**
@@ -32,7 +33,7 @@ flutter test 33 passed). **Этап 6, backend-часть ML-пайплайна,
 - **Sofia** — трек B (ML) **делает сама**; её пункты не перераспределяем.
 
 ### Xivalor — мобильное приложение (Этапы 4→9)
-- [ ] **Этап 4**: экран активного звонка; `IncomingCallHandler`/`CallSession` за DI; события incoming/answered/ended
+- [x] **Этап 4** (Dart-уровень): порт `VoiceCallProvider` за DI + `CallApi`, зеркало стейт-машины, `CallController`, экран звонка (оверлей) + дозвон; mock-провайдер; нативный адаптер — на машине с Android SDK/Xcode
 - [ ] **Этап 5**: экран согласия + настройки записи/ИИ; экран «собеседник отказался»
 - [ ] **Этап 7**: live-карточка по WS (`partial_transcript`, `agreement_detected`, `analysis_started`, `call_ended`); edit/confirm; задача из `confirmed`
 - [ ] **Этап 8**: личная и менеджерская доски (фильтры, сортировка, аналитика)
@@ -89,7 +90,8 @@ Flutter SDK 3.47.7 / Dart 3.13.5, в репозиторий не коммити�
       session хранится там же
 - [x] Repository + sync: pull → apply → push → ack → `sync_token`, идемпотентность
 - [x] API base URL через `--dart-define=API_BASE_URL`, не хардкодом
-- [x] Гейты: `flutter analyze` ✓ + `flutter test` ✓ (33 теста)
+- [x] Гейты: `flutter analyze` ✓ + `flutter test` ✓ (33 теста на момент этапа;
+      суммарно с Этапом 4 — 53)
 - ⚠️ **Ограничение среды**: на dev-машине нет Android SDK/Java/Xcode, поэтому
   сборка/запуск на эмуляторе здесь не проверялись — только Dart-уровень
   (analyze + test). См. `apps/mobile/README.md`.
@@ -97,9 +99,18 @@ Flutter SDK 3.47.7 / Dart 3.13.5, в репозиторий не коммити�
   на машине с Android SDK/Xcode.
 
 
-**Этап 4. Звонки** (после 3, нужен выбор voice-провайдера от трека C):
-- [ ] Порты: `IncomingCallHandler`, `CallSession`, платформенные адаптеры за DI
-- [ ] Экран активного звонка (таймер, mute, hangup); события incoming/answered/ended
+**Этап 4. Звонки** — 🔶 **Dart-уровень сделан** (ветка `track/mobile-calls`):
+- [x] Порты: `VoiceCallProvider` (за DI) + `CallApi`; клиентское зеркало
+      стейт-машины звонка (`domain/call.dart`, совпадает с backend)
+- [x] `CallController`: исходящий набор (`POST /calls` + `dial`), входящий
+      (answer/decline), mute, hangup; события incoming/ringing/answered/
+      ended/dropped/missed
+- [x] Экран звонка — оверлей поверх приложения (таймер, mute, hangup,
+      входящий: ответить/отклонить); дозвон из контактов и с доски (FAB)
+- [x] `MockVoiceCallProvider` для запуска без SDK (авто-ответ, dev-входящий)
+- [x] Гейты: `flutter analyze` ✓, `flutter test` ✓ (53 теста)
+- [ ] **Осталось** (нужна машина с Android SDK/Xcode): нативный адаптер
+      (CallKit / Telecom / MTS Exolve SDK) и реальные входящие VoIP
 
 **Этап 5. Consent flow (UI)** (после 3–4):
 - [ ] Экран согласия пользователя + настройки записи/ИИ

@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
@@ -6,6 +7,7 @@ import '../../domain/models.dart';
 import '../../infrastructure/api/api_exception.dart';
 import '../formats.dart';
 import 'contacts_screen.dart';
+import 'dialer_screen.dart';
 
 /// Personal board: the user's own tasks. Pull-to-refresh runs a sync; errors are
 /// shown without dropping the already-loaded list.
@@ -20,6 +22,14 @@ class BoardScreen extends ConsumerWidget {
       appBar: AppBar(
         title: Text(session == null ? 'Мои задачи' : session.user.fullName),
         actions: <Widget>[
+          if (kDebugMode)
+            IconButton(
+              icon: const Icon(Icons.phone_callback),
+              tooltip: 'Смоделировать входящий (dev)',
+              onPressed: () => ref
+                  .read(callControllerProvider.notifier)
+                  .simulateIncomingCall(phone: '+79000000003', name: 'Борис'),
+            ),
           IconButton(
             icon: const Icon(Icons.people_outline),
             tooltip: 'Контакты',
@@ -47,6 +57,13 @@ class BoardScreen extends ConsumerWidget {
           error: (error, stackTrace) => _Placeholder(text: 'Ошибка: $error'),
           loading: () => const Center(child: CircularProgressIndicator()),
         ),
+      ),
+      floatingActionButton: FloatingActionButton(
+        onPressed: () => Navigator.of(context).push(
+          MaterialPageRoute<void>(builder: (_) => const DialerScreen()),
+        ),
+        tooltip: 'Новый звонок',
+        child: const Icon(Icons.add_call),
       ),
     );
   }
