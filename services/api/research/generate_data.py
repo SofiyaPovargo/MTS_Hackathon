@@ -15,7 +15,6 @@ from pathlib import Path
 from schemas import (
     Commitment,
     CommitmentStatus,
-    CommitmentType,
     DialogueTurn,
     ExpectedCommitment,
     GoldCase,
@@ -57,7 +56,7 @@ CASES: list[GoldCase] = [
         expected_commitments=[
             ExpectedCommitment(
                 turn_index=2,
-                type=CommitmentType.promise,
+                type="promise",
                 title="Менеджер пришлёт договор на реабилитацию",
                 owner=Owner.counterparty,
                 due_date=date(2026, 10, 9),
@@ -81,7 +80,7 @@ CASES: list[GoldCase] = [
         expected_commitments=[
             ExpectedCommitment(
                 turn_index=2,
-                type=CommitmentType.meeting,
+                type="meeting",
                 title="Созвон для уточнения деталей по кредиту",
                 owner=Owner.user,
                 due_date=date(2026, 10, 6),
@@ -106,7 +105,7 @@ CASES: list[GoldCase] = [
         expected_commitments=[
             ExpectedCommitment(
                 turn_index=3,
-                type=CommitmentType.payment,
+                type="payment",
                 title="Оплата ремонта холодильника 4000 рублей",
                 owner=Owner.user,
                 due_date=date(2026, 10, 20),
@@ -131,7 +130,7 @@ CASES: list[GoldCase] = [
         expected_commitments=[
             ExpectedCommitment(
                 turn_index=1,
-                type=CommitmentType.promise,
+                type="promise",
                 title="Готовность заказа визиток",
                 owner=Owner.counterparty,
                 status=CommitmentStatus.needs_clarification,
@@ -155,7 +154,7 @@ CASES: list[GoldCase] = [
         expected_commitments=[
             ExpectedCommitment(
                 turn_index=1,
-                type=CommitmentType.deadline,
+                type="deadline",
                 title="Доставка груза по накладной",
                 owner=Owner.counterparty,
                 status=CommitmentStatus.needs_clarification,
@@ -195,7 +194,7 @@ CASES: list[GoldCase] = [
         expected_commitments=[
             ExpectedCommitment(
                 turn_index=2,
-                type=CommitmentType.follow_up,
+                type="follow_up",
                 title="Перезвон по вопросу документов",
                 owner=Owner.counterparty,
                 due_date=date(2026, 10, 8),
@@ -217,7 +216,7 @@ CASES: list[GoldCase] = [
         expected_commitments=[
             ExpectedCommitment(
                 turn_index=1,
-                type=CommitmentType.payment,
+                type="payment",
                 title="Аванс за ремонт квартиры 15000 рублей",
                 owner=Owner.user,
                 due_date=date(2026, 10, 7),
@@ -241,7 +240,7 @@ CASES: list[GoldCase] = [
         expected_commitments=[
             ExpectedCommitment(
                 turn_index=1,
-                type=CommitmentType.deadline,
+                type="deadline",
                 title="Сдача отчётных документов",
                 owner=Owner.counterparty,
                 due_date=date(2026, 10, 31),
@@ -264,7 +263,7 @@ CASES: list[GoldCase] = [
         expected_commitments=[
             ExpectedCommitment(
                 turn_index=2,
-                type=CommitmentType.meeting,
+                type="meeting",
                 title="Встреча в офисе для обсуждения условий",
                 owner=Owner.user,
                 due_date=date(2026, 10, 9),
@@ -290,21 +289,21 @@ CASES: list[GoldCase] = [
         expected_commitments=[
             ExpectedCommitment(
                 turn_index=2,
-                type=CommitmentType.promise,
+                type="promise",
                 title="Договор на поставку серверов",
                 owner=Owner.counterparty,
                 due_date=date(2026, 10, 6),
             ),
             ExpectedCommitment(
                 turn_index=3,
-                type=CommitmentType.follow_up,
+                type="follow_up",
                 title="Перезвон после обеда",
                 owner=Owner.counterparty,
                 due_date=date(2026, 10, 6),
             ),
             ExpectedCommitment(
                 turn_index=4,
-                type=CommitmentType.payment,
+                type="payment",
                 title="Аванс 50000 рублей за серверы",
                 owner=Owner.user,
                 amount=Decimal(50000),
@@ -329,7 +328,7 @@ CASES: list[GoldCase] = [
         expected_commitments=[
             ExpectedCommitment(
                 turn_index=1,
-                type=CommitmentType.open_question,
+                type="open_question",
                 title="Допустимость перевозки оборудования с температурным режимом",
                 owner=Owner.counterparty,
                 status=CommitmentStatus.needs_clarification,
@@ -352,7 +351,7 @@ CASES: list[GoldCase] = [
         expected_commitments=[
             ExpectedCommitment(
                 turn_index=0,
-                type=CommitmentType.payment,
+                type="payment",
                 title="Скидка 10% при оплате сразу",
                 owner=Owner.unknown,
                 status=CommitmentStatus.needs_clarification,
@@ -376,7 +375,7 @@ CASES: list[GoldCase] = [
         expected_commitments=[
             ExpectedCommitment(
                 turn_index=2,
-                type=CommitmentType.payment,
+                type="payment",
                 title="Оплата доставки заказа 500 рублей",
                 owner=Owner.user,
                 amount=Decimal(500),

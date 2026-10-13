@@ -11,15 +11,6 @@ from enum import StrEnum
 from pydantic import BaseModel, Field
 
 
-class CommitmentType(StrEnum):
-    deadline = "deadline"  # обещанный срок/дедлайн
-    meeting = "meeting"  # встреча/созвон
-    payment = "payment"  # оплата/перевод
-    promise = "promise"  # обещание/обязательство
-    follow_up = "follow_up"  # перезвонить/напомнить
-    open_question = "open_question"  # открытый вопрос
-
-
 class Owner(StrEnum):
     user = "user"
     counterparty = "counterparty"
@@ -36,7 +27,13 @@ class CommitmentStatus(StrEnum):
 class Commitment(BaseModel):
     """Конечная договорённость (то, что должен вернуть экстрактор)."""
 
-    type: CommitmentType
+    type: str = Field(
+        description=(
+            "Свободный тип договорённости. Базовый словарь: deadline, meeting, "
+            "payment, promise, follow_up, open_question — но допускаются любые "
+            "значения (например, send_document)."
+        )
+    )
     title: str = Field(description="Краткая формулировка договорённости")
     owner: Owner
     due_date: date | None = None
@@ -81,7 +78,7 @@ class ExpectedCommitment(BaseModel):
     """
 
     turn_index: int
-    type: CommitmentType
+    type: str
     title: str
     owner: Owner
     due_date: date | None = None
