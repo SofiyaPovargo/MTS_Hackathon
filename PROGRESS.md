@@ -3,13 +3,18 @@
 Обновлять при каждом мёрже. Легенда: ✅ готово и зелёные гейты · 🔶 частично
 (есть backend/исследование, ждёт интеграции) · ⬜ не начато.
 
-Сводка на 2026-10-13: **Этапы 1–3 закрыты, Этапы 4–5 (mobile, Dart) закрыты**,
+Сводка на 2026-10-14: **Этапы 1–3 закрыты, Этапы 4–5 (mobile, Dart) закрыты**,
 ML-исследование слито. **ML-пайплайн
 переведён в прод** (PR #5): запись → роли из каналов VoIP → сегментированный
 транскрипт → LLM-извлечение → валидация → `agreement_detected`; реальные воркеры
 и триггер `POST /calls/{id}/analyze`. **Приём аудио от клиента** `POST /calls/{id}/audio`
-слит (PR #8, трек C). Разработка ведётся в ветках `track/mobile-consent`
-(Xivalor), `track/ml` (Sofiya), `track/backend-voice` (Mav); после зелёных гейтов
+слит (PR #8, трек C). **ML-трек B закрыт (ветка `track/ml-live`, влита в
+`development`)**: live-стриминг ASR (WS→Redis→T-one), инкрементальный extraction,
+VAD (Silero), LLM self-host (Ollama `qwen2.5:7b`), детерминированные даты;
+проверено end-to-end на реальных моделях. Осталось по ML: **Privacy**
+(deletion/retention/redaction), notifications-воркер, авто-триггер Exolve `crr`.
+Разработка ведётся в ветках `track/mobile-consent` (Xivalor),
+`track/ml-live` (Sofiya), `track/backend-voice` (Mav); после зелёных гейтов
 и ревью — мерж в `development`.
 
 ---
@@ -96,21 +101,30 @@ ML-исследование слито. **ML-пайплайн
 ### ml/ — прод-пайплайн (Этап 6)
 - `pipeline.py` — оркестратор: `load_call_audio` (ноги VoIP / смесь),
   `transcribe_and_store` (аудио → транскрипт в Postgres + `partial_transcript`),
-  `extract_and_store` (транскрипт → agreements + `agreement_detected`); идемпотентно по `call_id`
+  `extract_and_store` (транскрипт → agreements + `agreement_detected`),
+  `extract_incremental` (upsert по fingerprint, события только на изменения);
+  идемпотентно по `call_id`
+- `live.py` — live-путь: Redis-стримы аудио → `ToneASRClient.stream` → сегменты в
+  `transcripts` + `partial_transcript`; роли из каналов; финализация по `eof`
 - `stt/` — `CallAudio`, декодер (soundfile/soxr → 8 кГц int16), роли из каналов
-  VoIP / диаризация для mono/PSTN, `role_source` (`channels|diarization|mono`); `Transcript`
+  VoIP / диаризация для mono/PSTN, `role_source` (`channel|diarization|unknown`); `Transcript`
 - `extraction/` — `ExtractionPort`, `InstructorLLMExtractor`, `ExtractionService.extract_pair`
-  (raw + validated раздельно), `validation` (даты/порог confidence), `PROMPT_VERSION`
-- `asr/` — `ASRPort`, `ToneASRClient` (WS, 8 кГц int16, chunking)
+  (raw + validated раздельно), `validation` (детерминированные даты/порог confidence), `PROMPT_VERSION`
+- `asr/` — `ASRPort` + `StreamingASRPort` (`transcribe` и `stream`), `ToneASRClient`
+  (WS, 8 кГц int16, chunking; finalize 5 с)
 - `diarization/` — `DiarizationPort`, `PyannoteDiarizer` (только mono/PSTN, HF_TOKEN)
+- `vad/` — `VadPort`, `SileroVad`, `trim_to_speech` (обрезка краёв, timeline-safe)
 - CLI `python -m app.ml.stt <id>`
 
 ### worker.py / workers/
-- Celery, очереди `asr|ai|notifications`
+- Celery, очереди `asr|ai|asr-live|ai-live|notifications`
 - `process_asr` (worker-asr) → читает аудио из MinIO, транскрибирует, сохраняет,
   шлёт `partial_transcript`, затем передаёт в `run_llm_extraction` (worker-ai)
 - `run_llm_extraction` (worker-ai) → agreements + `agreement_detected`; оба идемпотентны по `call_id`
-- `send_reminder`, `request_data_deletion` — заглушки (`implemented: False`)
+- `stream_asr` (worker-asr-live) → live-стримы → транскрипт; `stream_extract`
+  (worker-ai-live) → инкрементальный extraction (debounce)
+- `send_reminder`, `request_data_deletion` — заглушки (`implemented: False`);
+  retention-пурж и redaction — не реализованы (Privacy — следующий шаг)
 
 ### cli.py
 - `python -m app.cli seed` — демо-данные: менеджер Ирина +79000000001, Анна
@@ -123,11 +137,12 @@ ML-исследование слито. **ML-пайплайн
 | Часть | research | production |
 |---|---|---|
 | Синтез звонков | ✅ `research/` (TTS, wav) | — |
-| Streaming ASR (T-one) | ✅ `ml/asr/tone.py` + тест протокола | ✅ `ToneASRClient` в `worker.py` (batch по файлу) |
+| Streaming ASR (T-one) | ✅ `ml/asr/tone.py` + тест протокола | ✅ `ToneASRClient` (`transcribe` + `stream`); batch и live |
 | Диаризация (pyannote) | ✅ `ml/diarization/` | ✅ fallback для mono/PSTN (при `HF_TOKEN`) |
 | STT-пайплайн | ✅ `ml/stt/` + тесты | ✅ роли из каналов VoIP / диаризация; `role_source` |
-| VAD/чанкинг | ⬜ (отдельного VAD нет) | 🔶 чанкинг внутри T-one-клиента |
-| LLM-извлечение | ⬜ | ✅ Instructor + валидация (при `LLM_BASE_URL`/`LLM_MODEL`) |
+| VAD/чанкинг | ✅ `ml/vad` (Silero) | ✅ `VAD_ENABLED` (обрезка краёв) + чанкинг T-one |
+| Live-стриминг | ✅ `ml/live.py` | ✅ WS-аудио → Redis → `worker-asr-live`/`worker-ai-live` |
+| LLM-извлечение | ✅ | ✅ Instructor + валидация; self-host Ollama `qwen2.5:7b` |
 | События/WebSocket | — | ✅ `partial_transcript`, `agreement_detected` из воркеров |
 | Транскрипты в БД | — | ✅ `transcripts` (JSONB-сегменты, 1:1 со звонком) |
 
@@ -181,14 +196,14 @@ models, sync_models, ports), `application/` (Riverpod-контроллеры + p
 |---|---|---|
 | domain (1) | test_commitment | типы договорённостей |
 | unit (4) | test_dates, test_rules, test_state_machine, test_exolve | относительные даты, пороги, переходы звонка, Exolve (события, тело маршрута, Call Record API, порт, разбор `EXOLVE_SIP_ROUTES`) |
-| ml (4) | test_tone_client, test_pipeline, test_channels, test_extraction | протокол T-one, слияние ролей/ресамплинг, роли из каналов VoIP, извлечение+валидация (`extract_pair`) |
-| integration (9) | test_auth, test_access, test_call_consent, test_agreements_tasks, test_schedule, test_sync, test_manager, test_ws_events, test_ml_pipeline | OTP/refresh, права ролей+команды, запись без consent, confirm→task, календарь/напоминания/черновик (только confirmed), sync-идемпотентность, WS auth/ownership/replay/live, сквозной ML-пайплайн + `POST /calls/{id}/analyze` |
+| ml (6) | test_tone_client, test_pipeline, test_channels, test_extraction, test_trim, test_live | протокол T-one (`transcribe`+`stream`), слияние ролей/ресамплинг, роли из каналов VoIP, извлечение+валидация (детерминированные даты), VAD-обрезка, чтение Redis-стримов |
+| integration (9) | test_auth, test_access, test_call_consent, test_agreements_tasks, test_schedule, test_sync, test_manager, test_ws_events, test_ml_pipeline | OTP/refresh, права ролей+команды, запись без consent, confirm→task, календарь/напоминания/черновик (только confirmed), sync-идемпотентность, WS auth/ownership/replay/live, сквозной ML-пайплайн (batch + live) + `POST /calls/{id}/analyze` |
 | mobile (13) | domain/models, domain/call, domain/consent, infrastructure/local_stores, infrastructure/sync_engine, application/auth_controller, application/board_controller, application/contacts_controller, application/call_controller, application/consent_controller, widget/app, widget/call_screen, widget/consent_screen, widget/settings_screen | парсинг моделей, стейт-машина звонка, согласие (AppConsent/статусы, кэш + write-through + retry), SQLite-хранилища (включая миграцию v1→v2), цикл sync + идемпотентность/конфликт/ретраи, контроллеры, экраны (доска, контакты, звонок, согласие, настройки) |
 
-Backend: **157 passed**; интеграционные требуют `docker compose up -d postgres redis`
-(отдельная БД `agreements_test`).
-интеграционные требуют `docker compose up -d postgres redis` (отдельная БД
-`agreements_test`).
+Backend: **171 passed** (unit+ml+domain 103, integration 68); интеграционные требуют
+`docker compose up -d postgres redis` (отдельная БД `agreements_test`; креды берутся
+из `DATABASE_URL`). ML проверен end-to-end на реальных моделях (T-one, Ollama
+`qwen2.5:7b`, Silero VAD, pyannote).
 Mobile: **82 passed** (`flutter test`, без Docker); локальные хранилища тестируются
 через `sqflite_common_ffi`.
 
@@ -200,7 +215,8 @@ Mobile: **82 passed** (`flutter test`, без Docker); локальные хра
 cd services/api
 uv run ruff check .        # lint
 uv run mypy .              # types
-uv run pytest              # 135 тестов
+uv run pytest tests/unit tests/ml tests/domain   # 103 (без Docker)
+uv run pytest tests/integration                  # 68 (postgres+redis)
 docker compose up -d       # поднять стек
 uv run python -m app.cli seed   # демо-данные (если БД пуста)
 curl -k https://localhost/api/healthz   # живо (nginx TLS)
@@ -224,12 +240,12 @@ flutter test               # 82 теста (Dart-уровень, без Docker)
 |---|---|
 | ~~Выбор voice-провайдера~~ **МТС Exolve** (решено 2026-10-13, `plan.md` §11.1) | снят; Этап 4 — за webhook-маршрутами и VoIP SDK |
 | ~~Формат WS-событий~~ версия 1 + `GET /api/ws/events/schema` (трек C) | снят; мобильные/ML эмитят по контракту |
-| **Аудио в ML — от мобильного клиента** (`MEDIA_INGEST_URL`): у Exolve нет серверного медиапотока (решено 2026-10-13, §11.1) | Этап 6: ingest-эндпоинт **готов** (PR #8); осталась загрузка SDK-потока клиентом (трек A) |
-| **Авто-триггер анализа по Exolve `crr`** (скачать запись → MinIO → очередь) не реализован | Этап 6/демо: сейчас триггер ручной — `POST /calls/{id}/analyze` |
+| **Аудио в ML — от мобильного клиента** (`MEDIA_INGEST_URL`): у Exolve нет серверного медиапотока (решено 2026-10-13, §11.1) | Этап 6: ingest-эндпоинт **готов** (PR #8) и **live WS `/ws/calls/{id}/audio`** готов (track/ml-live); осталась отправка аудио клиентом (трек A) |
+| **Авто-триггер анализа по Exolve `crr`** (скачать запись → MinIO → очередь) не реализован | Этап 6/демо: сейчас триггер ручной — `POST /calls/{id}/analyze` (live стартует по WS) |
 | У Exolve нет сбора DTMF → `CONSENT_MODE=notice` (§11.1) | Этап 5: для Exolve только notice; `dtmf` — за другими провайдерами |
 | Вебхуки Exolve подписаны общим секретом в URL (`?secret=`) — заголовки Exolve не ставит | Деплой: URL колбэка — секрет; `PUBLIC_BASE_URL` обязателен в бою |
-| Шифрование аудио/транскриптов и redaction логов LLM не сделаны (AGENTS, «Code and data security») | Этап 6: приватность |
-| Выбор LLM (самохостинг предпочтителен) | Этап 6: извлечение реализовано, но включится только при `LLM_BASE_URL`/`LLM_MODEL` |
+| **Privacy не сделана** (AGENTS, «Code and data security»): удаление данных по запросу (`request_data_deletion` — заглушка), retention-пурж просроченного аудио, redaction логов LLM, шифрование транскриптов | Этап 6: следующий шаг трека B |
+| ~~Выбор LLM (самохостинг)~~ **Ollama `qwen2.5:7b` в compose** (решено) | снят; извлечение включено |
 
 ## История (для контекста)
 
@@ -245,3 +261,5 @@ flutter test               # 82 теста (Dart-уровень, без Docker)
 - `b7f2ccb` — **Этап 4 (mobile, Dart)**: порт `VoiceCallProvider` за DI + `CallApi`, `CallController`, зеркало стейт-машины, экран звонка (оверлей) + дозвон, mock-провайдер; analyze ✓, 53 теста — PR #7 (нативный SDK-адаптер — на машине с Android SDK/Xcode)
 - `c216b0f` — **Трек C**: приём аудио от клиента `POST /calls/{id}/audio` (MinIO + `call_audio`, 409 без записи/согласия, mixed/`?leg=`) — PR #8
 - `#9` — **Этап 5 (mobile, Dart)**: consent-гейт + настройки записи/ИИ (`app_settings` v2), кэш решения + write-through, блокировка записи без согласия, отказ собеседника → обычный звонок; analyze ✓, 82 теста
+- `309bf34`/`c217b00`/`37fcc3a`/`252807b` — **ML-трек B (`track/ml-live`)**: LLM self-host (Ollama) + детерминированные даты, Silero VAD, live-стриминг ASR (WS→Redis→T-one) + инкрементальный extraction, документация; влито в `development`
+- `12f596c` — **ML-фиксы**: live-debounce, finalize T-one 30→5 с, интеграционный conftest по `DATABASE_URL`; end-to-end проверка на реальных моделях
