@@ -66,6 +66,12 @@ async def get_call(session: AsyncSession, call_id: uuid.UUID) -> Call | None:
     return cast("Call | None", await session.get(Call, call_id))
 
 
+async def get_call_by_external_id(session: AsyncSession, external_id: str) -> Call | None:
+    """Find a call by the provider-side id (Exolve ``call_sid``)."""
+    result = await session.execute(select(Call).where(Call.external_id == external_id))
+    return result.scalar_one_or_none()
+
+
 async def list_calls(session: AsyncSession, user_id: uuid.UUID, *, limit: int = 100) -> Sequence[Call]:
     result = await session.execute(
         select(Call).where(Call.user_id == user_id).order_by(Call.created_at.desc()).limit(limit)

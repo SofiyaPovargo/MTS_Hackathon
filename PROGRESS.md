@@ -36,7 +36,9 @@ ML-исследование слито. **ML-пайплайн
 - `routes.py` — все эндпоинты: `/auth/*`, `/me*`, `/calls*` (+ `POST /calls/{id}/audio`
   — загрузка записи клиентом, 202; + `POST /calls/{id}/analyze`
   — постановка ASR/LLM в очередь, 202), `/agreements*`, `/tasks*`,
-  `/manager/team/*`, `/sync` GET/POST, `/healthz`
+  `/manager/team/*`, `/sync` GET/POST, `/voice/exolve/control` и
+  `/voice/exolve/events` (вебхуки провайдера, подпись `VOICE_WEBHOOK_SECRET`),
+  `/healthz`
 - `ws.py` — WebSocket `/ws/calls/{id}` (JWT, owner-only, replay+live, схема v1)
   + `GET /ws/events/schema`
 - `schemas.py` — Pydantic v2: UserOut, AuthResponse, CallOut, AgreementOut,
@@ -73,6 +75,11 @@ ML-исследование слито. **ML-пайплайн
 - `audio_ingest.py` — приём записи от клиента: валидация типа/размера (413/422),
   MinIO (SSE + retention), заполнение `call_audio` (mixed или ноги), удаление
   вытесненных объектов, авто-постановка ASR; отказ без `recording_started_at`
+- `voice_webhooks.py` — вебхуки Exolve: call-control (маршрут по
+  `EXOLVE_SIP_ROUTES` → `Call` с `external_id=call_sid`, `file_to_A`,
+  `event_URL`, `client_id`; неизвестный `sip_id` → JSON-RPC `error`, повтор
+  идемпотентен) и прогресс-события (`b/o/s/e` → общий `CallSessionService` по
+  `client_id`/`call_sid`; `h`/`crr`/неизвестные — без перехода)
 
 ### infrastructure/
 - `db/` — SQLAlchemy async: models, repositories, session; `migrations/` (Alembic,
@@ -82,7 +89,7 @@ ML-исследование слито. **ML-пайплайн
 
 ### integrations/ — внешние порты
 - `voice.py` — `VoiceProviderPort`, `MockVoiceProvider`, `voice_provider_factory` (`mock`/`exolve`); webhook-signature `VOICE_WEBHOOK_SECRET`
-- `exolve.py` — адаптер МТС Exolve: парсинг событий (`b/o/s/e/h/crr` → `CallEvent`), тело call-control (маршрут на SIP ID + `file_to_A`), Call Record API (`SetCallRecordState`/`GetInfo`/`Download`); `open_media_stream` → `MEDIA_INGEST_URL` (аудио льёт клиент), `collect_dtmf` → `None` (`CONSENT_MODE=notice`) — см. plan.md §11.1
+- `exolve.py` — адаптер МТС Exolve: парсинг событий (`b/o/s/e/h/crr` → `CallEvent`), тело call-control (маршрут на SIP ID + `file_to_A`), Call Record API (`SetCallRecordState`/`GetInfo`/`Download`), парсинг маршрутов входящих (`EXOLVE_SIP_ROUTES`, `sip_id` → телефон + SIP-URI); `open_media_stream` → `MEDIA_INGEST_URL` (аудио льёт клиент), `collect_dtmf` → `None` (`CONSENT_MODE=notice`) — см. plan.md §11.1
 - `outbound.py` — календарь/напоминания/черновик клиенту (не отправляется автоматически — правило!); фабрики портов
 
 ### ml/ — прод-пайплайн (Этап 6)
@@ -166,12 +173,13 @@ models, sync_models, ports), `application/` (Riverpod-контроллеры + p
 | Группа | Файлы | Что покрывают |
 |---|---|---|
 | domain (1) | test_commitment | типы договорённостей |
-| unit (4) | test_dates, test_rules, test_state_machine, test_exolve | относительные даты, пороги, переходы звонка, Exolve (события, тело маршрута, Call Record API, порт) |
+| unit (4) | test_dates, test_rules, test_state_machine, test_exolve | относительные даты, пороги, переходы звонка, Exolve (события, тело маршрута, Call Record API, порт, разбор `EXOLVE_SIP_ROUTES`) |
 | ml (4) | test_tone_client, test_pipeline, test_channels, test_extraction | протокол T-one, слияние ролей/ресамплинг, роли из каналов VoIP, извлечение+валидация (`extract_pair`) |
-| integration (9) | test_auth, test_access, test_call_consent, test_agreements_tasks, test_schedule, test_sync, test_manager, test_ws_events, test_ml_pipeline | OTP/refresh, права ролей+команды, запись без consent, confirm→task, календарь/напоминания/черновик (только confirmed), sync-идемпотентность, WS auth/ownership/replay/live, сквозной ML-пайплайн + `POST /calls/{id}/analyze` |
+| integration (10) | test_auth, test_access, test_call_consent, test_agreements_tasks, test_schedule, test_sync, test_manager, test_ws_events, test_ml_pipeline, test_exolve_webhooks | OTP/refresh, права ролей+команды, запись без consent, confirm→task, календарь/напоминания/черновик (только confirmed), sync-идемпотентность, WS auth/ownership/replay/live, сквозной ML-пайплайн + `POST /calls/{id}/analyze`, вебхуки Exolve (routing-тело, идемпотентность, отказ без consent, отказ без секрета) |
 | mobile (10) | domain/models, domain/call, infrastructure/local_stores, infrastructure/sync_engine, application/auth_controller, application/board_controller, application/contacts_controller, application/call_controller, widget/app, widget/call_screen | парсинг моделей, стейт-машина звонка, SQLite-хранилища, цикл sync + идемпотентность/конфликт/ретраи, контроллеры, экраны (доска, контакты, звонок) |
 
-Backend: **135 passed** (domain 6 + unit 54 + ml 27 + integration 48);
+Backend: **157 passed**; интеграционные требуют `docker compose up -d postgres redis`
+(отдельная БД `agreements_test`).
 интеграционные требуют `docker compose up -d postgres redis` (отдельная БД
 `agreements_test`).
 Mobile: **53 passed** (`flutter test`, без Docker); локальные хранилища тестируются
@@ -210,8 +218,9 @@ flutter test               # 53 теста (Dart-уровень, без Docker)
 | ~~Выбор voice-провайдера~~ **МТС Exolve** (решено 2026-10-13, `plan.md` §11.1) | снят; Этап 4 — за webhook-маршрутами и VoIP SDK |
 | ~~Формат WS-событий~~ версия 1 + `GET /api/ws/events/schema` (трек C) | снят; мобильные/ML эмитят по контракту |
 | **Аудио в ML — от мобильного клиента** (`MEDIA_INGEST_URL`): у Exolve нет серверного медиапотока (решено 2026-10-13, §11.1) | Этап 6: нужен ingest-эндпоинт (backend) + загрузка SDK-потока (трек A) |
-| **Авто-триггер анализа по Exolve `crr`** (скачать запись → MinIO → очередь) не реализован | Этап 6/демо: сейчас триггер ручной — `POST /calls/{id}/analyze` |
+| **Авто-триггер анализа по Exolve `crr`** (скачать запись → MinIO → очередь) не реализован; вебхуки call-control/события уже принимаются | Этап 6/демо: сейчас триггер ручной — `POST /calls/{id}/analyze`; `crr` подтверждается без скачивания |
 | У Exolve нет сбора DTMF → `CONSENT_MODE=notice` (§11.1) | Этап 5: для Exolve только notice; `dtmf` — за другими провайдерами |
+| Вебхуки Exolve подписаны общим секретом в URL (`?secret=`) — заголовки Exolve не ставит | Деплой: URL колбэка — секрет; `PUBLIC_BASE_URL` обязателен в бою |
 | Шифрование аудио/транскриптов и redaction логов LLM не сделаны (AGENTS, «Code and data security») | Этап 6: приватность |
 | Выбор LLM (самохостинг предпочтителен) | Этап 6: извлечение реализовано, но включится только при `LLM_BASE_URL`/`LLM_MODEL` |
 

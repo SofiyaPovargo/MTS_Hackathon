@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import hmac
 import uuid
 from collections.abc import AsyncIterator
 from typing import cast
@@ -24,6 +25,7 @@ from app.services.manager import ManagerDashboardService
 from app.services.schedule import ScheduleService
 from app.services.sync import SyncService
 from app.services.task import TaskService
+from app.services.voice_webhooks import ExolveWebhookService
 
 
 def get_settings(request: Request) -> Settings:
@@ -56,8 +58,15 @@ async def get_current_user(
 
 
 def require_voice_webhook(request: Request) -> None:
-    secret = request.headers.get("X-Voice-Webhook-Secret", "")
-    if secret != request.app.state.settings.voice_webhook_secret:
+    expected = request.app.state.settings.voice_webhook_secret
+    # The mock/demo driver signs with a header; Exolve cannot set custom headers
+    # on its callbacks, so the shared secret is accepted from the query string too
+    # (the callback URL is configured per SIP resource).
+    header = request.headers.get("X-Voice-Webhook-Secret", "")
+    query = request.query_params.get("secret", "")
+    if not (
+        hmac.compare_digest(header, expected) or hmac.compare_digest(query, expected)
+    ):
         raise PermissionDenied("invalid voice webhook secret")
 
 
@@ -133,3 +142,12 @@ def get_auth_service(
     settings: Settings = Depends(get_settings),
 ) -> AuthService:
     return AuthService(session, cache, settings)
+
+
+def get_exolve_webhook_service(
+    request: Request,
+    session: AsyncSession = Depends(get_session),
+    calls: CallSessionService = Depends(get_call_session_service),
+    settings: Settings = Depends(get_settings),
+) -> ExolveWebhookService:
+    return ExolveWebhookService(session, settings=settings, calls=calls)

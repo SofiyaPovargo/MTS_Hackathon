@@ -625,9 +625,28 @@ docs.exolve.ru):
    уведомления проигрывается через `file_to_A`, факт согласия пишется в
    `consents`. Режим `dtmf` остаётся для провайдеров, которые его поддерживают.
 
+**Webhooks Exolve (трек C).** Оба колбэка обслуживает `services/voice_webhooks.py`
+(адаптер остаётся `integrations/exolve.py`):
+
+- `POST /api/voice/exolve/control` — call control. По `sip_id` находим
+  принимающего пользователя и его SIP‑URI (`EXOLVE_SIP_ROUTES`,
+  `sip_id=phone:sip_uri`), заводим/переиспользуем `Call` (`external_id =
+  call_sid`, direction `inbound`) и отвечаем JSON‑RPC‑телом: маршрут на SIP ID
+  пользователя, `event_URL` на наш event‑эндпоинт и `file_to_A` — уведомление о
+  записи. Неизвестный `sip_id` → JSON‑RPC `error` (звонок не маршрутизируется).
+  Повторный колбэк с тем же `call_sid` идемпотентен.
+- `POST /api/voice/exolve/events` — прогресс `b/o/s/h/e/crr`. Звонок находится
+  по `client_id` (наш id, эхо из routing‑тела) или по `call_sid`; события
+  `b/o/s/e` прогоняются через тот же `CallSessionService`, что и mock, поэтому
+  правило «запись только после `answered` + согласия» соблюдается автоматически.
+  `h`/`crr` и неизвестные типы подтверждаются без перехода жизненного цикла.
+- Оба эндпоинта подписываются общим секретом (`VOICE_WEBHOOK_SECRET`), который
+  Exolve присылает как `?secret=` (заголовки Exolve не ставит). `event_URL`
+  собирается из `PUBLIC_BASE_URL` + базового пути API.
+
 Интеграция — адаптер за `VoiceProviderPort` (`integrations/exolve.py`); ML‑пайплайн
-и мобильный UI не меняются. Ключи/номера — только из `.env` (`EXOLVE_*`), в
-репозиторий не коммитятся.
+и мобильный UI не меняются. Ключи/номера — только из `.env` (`EXOLVE_*`, `PUBLIC_BASE_URL`),
+в репозиторий не коммитятся.
 
 ## 12. ИИ‑пайплайн
 
@@ -710,6 +729,21 @@ POST /calls/{call_id}/audio                  # смешанный поток (п
 POST /calls/{call_id}/audio?leg=operator     # одна нога VoIP (?leg=client — вторая)
      &duration_sec=123
 ```
+
+### Вебхуки Voice‑провайдера (МТС Exolve, §11.1)
+
+```http
+POST /voice/exolve/control?secret={VOICE_WEBHOOK_SECRET}
+{ "sip_id": "1001", "numberA": "+7XXXXXXXXXX", "call_sid": "..." }
+→ JSON‑RPC 2.0: followme на SIP ID пользователя, event_URL, file_to_A (уведомление)
+
+POST /voice/exolve/events?secret={VOICE_WEBHOOK_SECRET}
+{ "type": "s" | "b" | "o" | "e" | "h" | "crr", "call_sid": "...", "client_id": "..." }
+→ { "status": "handled" | "ignored", "call_id": "...", "event": "s" }
+```
+
+Маршрутизация входящих — `EXOLVE_SIP_ROUTES` (`sip_id=phone:sip_uri`),
+внешний адрес колбэков — `PUBLIC_BASE_URL`.
 
 ### Синхронизация
 

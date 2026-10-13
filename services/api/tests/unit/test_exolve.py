@@ -16,6 +16,7 @@ from app.integrations.exolve import (
     ExolveVoiceProvider,
     build_routing_response,
     parse_call_event,
+    parse_sip_routes,
 )
 from app.integrations.voice import MockVoiceProvider, voice_provider_factory
 
@@ -68,6 +69,24 @@ def test_parse_non_lifecycle_keeps_raw(kind: str) -> None:
     assert event.event is None
     assert event.raw == payload
     assert event.known is (kind != "z")
+
+
+def test_parse_sip_routes_handles_multiple_entries() -> None:
+    routes = parse_sip_routes(
+        "1001=+79000000002:sip:anna@pbx, 1002=+79000000003:sip:boris@pbx"
+    )
+    assert set(routes) == {"1001", "1002"}
+    assert routes["1001"].phone == "+79000000002"
+    assert routes["1001"].sip_uri == "sip:anna@pbx"
+
+
+def test_parse_sip_routes_skips_malformed_entries() -> None:
+    routes = parse_sip_routes("1001=+7900,sip_id_without_equals,:sip:x,=+7900:sip:y")
+    assert routes == {}
+
+
+def test_parse_sip_routes_empty_is_empty() -> None:
+    assert parse_sip_routes("") == {}
 
 
 def test_build_routing_response_shape() -> None:

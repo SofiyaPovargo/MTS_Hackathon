@@ -44,8 +44,8 @@ pytest 135 passed. **Трек C (Mav): добавлен приём аудио о
 ### Mav — backend и интеграции (Трек C)
 - [x] **Приём аудио от клиента** (критический путь): `POST /calls/{id}/audio` → MinIO → `call_audio` → очередь `process_asr` (202; отказ 409 без записи/согласия, mixed или per-leg `?leg=`)
 - [ ] **Exolve `crr`** → скачать запись (Call Record API) → MinIO → авто-постановка ASR
-- [ ] **Exolve webhooks** (call-control + statistics `b/o/s/h/e/crr`) end-to-end
-- [ ] **Consent-уведомление** в бою (`file_to_A`, режим `notice`) + запись в `consents`
+- [x] **Exolve webhooks** (call-control + statistics `b/o/s/h/e/crr`) end-to-end: `POST /api/voice/exolve/control` (маршрут по `EXOLVE_SIP_ROUTES`, `Call`, `file_to_A`, `event_URL`) + `POST /api/voice/exolve/events` (`b/o/s/e` → `CallSessionService`); `crr` — за следующим пунктом
+- [x] **Consent-уведомление** в бою (`file_to_A`, режим `notice`) + запись в `consents`: notice в ответе call-control, ветка согласия — по событию `s`
 - [ ] **Приватность**: шифрование аудио/транскриптов, redaction логов LLM
 - [ ] (опц.) реальные адаптеры календаря/напоминаний; (опц.) деплой ближе к демо
 
@@ -173,12 +173,19 @@ wav (research уже умеет их синтезировать) — мобил�
      `integrations/exolve.py` — события (`b/o/s/e/h/crr`→`CallEvent`), тело
      call-control (маршрут на SIP ID + `file_to_A`), Call Record API
      (`SetCallRecordState`/`GetInfo`/`Download`); мок остаётся для тестов/демо
-   - [ ] Webhook-маршруты Exolve (call-control + события) и end-to-end связка
+   - [x] Webhook-маршруты Exolve (call-control + события) и end-to-end связка:
+     `POST /api/voice/exolve/control` (маршрут по `EXOLVE_SIP_ROUTES`, создание
+     `Call`, `file_to_A`, `event_URL`) и `POST /api/voice/exolve/events`
+     (`b/o/s/e` → тот же `CallSessionService`; корреляция по `client_id`/
+     `call_sid`); общий секрет `?secret=`, `PUBLIC_BASE_URL`
 2. **Consent-уведомление** (нужно Этапу 5): `play_notice` через провайдера,
    DTMF 1/2, запись события в `consents`
    - [x] Адаптер Exolve: notice через `file_to_A` в ответе call-control
-   - [ ] Подключить к consent-flow; у Exolve нет сбора DTMF → режим `notice`
-     (`plan.md` §11.1), `dtmf` — за другими провайдерами
+   - [x] Подключить к consent-flow; у Exolve нет сбора DTMF → режим `notice`
+     (`plan.md` §11.1), `dtmf` — за другими провайдерами. Уведомление
+     проигрывается в ответе call-control (`file_to_A`), а ветка согласия
+     запускается событием `s` через общий `CallSessionService` (`notice` →
+     granted/`audio_notice`)
 3. **WebSocket-эндпоинт** (нужен и мобильному, и ML):
    - [x] `/api/ws/calls/{id}` с JWT-аутентификацией (header или `?token=`),
      владелец звонка; версия в схеме событий (`version: 1`) + `GET /api/ws/events/schema`
