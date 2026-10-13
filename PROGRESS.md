@@ -249,4 +249,4 @@ flutter test               # 106 тестов (Dart-уровень, без Docke
 - `c216b0f` — **Трек C**: приём аудио от клиента `POST /calls/{id}/audio` (MinIO + `call_audio`, 409 без записи/согласия, mixed/`?leg=`) — PR #8
 - `#9` — **Этап 5 (mobile, Dart)**: consent-гейт + настройки записи/ИИ (`app_settings` v2), кэш решения + write-through, блокировка записи без согласия, отказ собеседника → обычный звонок; analyze ✓, 82 теста
 - `#10` — **Трек C (Mav)**: Exolve call-control + event-webhooks end-to-end (`/voice/exolve/control`, `/voice/exolve/events`)
-- **Этап 7 (mobile, Dart)** *(в PR)*: live-карточка по WS (`WebSocketCallEvents`, `AgreementApi`, контракт v1), транскрипт + карточки договорённостей, confirm/reject/edit, ручной ввод без согласия, задача из `confirmed`; analyze ✓, 106 тестов
+- `#11` — **Этап 7 (mobile, Dart)**: live-карточка по WS (`WebSocketCallEvents`, `AgreementApi`, контракт v1), транскрипт + карточки договорённостей, confirm/reject/edit, ручной ввод без согласия, задача из `confirmed`; analyze ✓, 106 тестов
