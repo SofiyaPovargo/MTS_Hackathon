@@ -3,7 +3,7 @@
 Обновлять при каждом мёрже. Легенда: ✅ готово и зелёные гейты · 🔶 частично
 (есть backend/исследование, ждёт интеграции) · ⬜ не начато.
 
-Сводка на 2026-10-13: **Этапы 1–2 закрыты**, ML-исследование слито; всё остальное
+Сводка на 2026-10-13: **Этапы 1–3 закрыты**, ML-исследование слито; всё остальное
 — в работе по `TEAM_PLAN.md`. Разработка ведётся в ветках `track/mobile`
 (Xivalor), `track/ml` (Sofiya), `track/backend-voice` (Mav); после зелёных гейтов
 и ревью — мерж в `development`.
@@ -16,10 +16,10 @@
 |---|---|---|---|
 | 1. Подготовка | ✅ | MVP-сценарий, роли, стек Flutter, репо, структура; **voice-провайдер выбран: МТС Exolve** (§11.1) | — |
 | 2. Серверная основа | ✅ | Postgres/Redis/MinIO, модели, auth+роли, CRUD, docker compose, миграции; 69 тестов | — |
-| 3. Мобильная основа | ⬜ | Flutter SDK установлен (3.47.7/Dart 3.13.5), план файлов готов | `apps/mobile` не создан: auth, контакты, SQLite+sync, доска, Repository |
-| 4. Звонки | 🔶 | `VoiceProviderPort` (mock) + webhook-маршруты в backend; **адаптер МТС Exolve** `integrations/exolve.py` (события, call-control, Call Record API); state machine | webhook-маршруты call-control/событий Exolve, VoIP SDK, экран звонка, исходящие |
-| 5. Consent flow | 🔶 | backend-логика целиком: `consent.py`, `call_session.py`, state machine, тесты notice/DTMF/refusal/withdraw; адаптер: notice через `file_to_A` (Exolve) | маршрут call-control, связка end-to-end, мобильные экраны; у Exolve нет сбора DTMF — режим `notice` (§11.1) |
-| 6. Запись и анализ | 🔶 | research-слой `src/app/ml`: T-one ASR-клиент, pyannote-диаризация, STT-пайплайн (roles, resample); S3-хранилище; Celery-воркеры (заглушки); **WS-эндпоинт `/api/ws/calls/{id}`** (JWT, replay+live, версия схемы 1) | VAD/чанкинг, worker-asr/ai задачи, LLM-извлечение, транскрипты в БД, эмиссия `partial_transcript`/`agreement_detected` |
+| 3. Мобильная основа | ✅ | `apps/mobile` (Flutter): слои UI/App/Domain/Infra, OTP-auth + refresh, контакты за портом, личная доска, SQLite (tasks/agreements/outbox/sync_state/session), Repository + sync (pull→apply→push→ack→token), `--dart-define=API_BASE_URL`; analyze ✓, 33 теста | сборка/прогон на эмуляторе (нет Android SDK/Xcode в среде) — см. ограничение |
+| 4. Звонки | 🔶 | `VoiceProviderPort` (mock) + webhook-маршруты в backend; state machine | реальный провайдер (блокер), VoIP SDK, экран звонка, исходящие |
+| 5. Consent flow | 🔶 | backend-логика целиком: `consent.py`, `call_session.py`, state machine, тесты notice/DTMF/refusal/withdraw | аудио-уведомление собеседнику (play_notice), DTMF через провайдера, мобильные экраны |
+| 6. Запись и анализ | 🔶 | research-слой `src/app/ml`: T-one ASR-клиент, pyannote-диаризация, STT-пайплайн (roles, resample); S3-хранилище; Celery-воркеры (заглушки) | VAD/чанкинг, worker-asr/ai задачи, LLM-извлечение, транскрипты в БД, WS-события |
 | 7. Договорённости и задачи | 🔶 | backend: agreement-статусы, confirm→task, PATCH-guards, audit; тесты | live-карточка (UI), напоминания, привязка к звонку в UI |
 | 8. Доски | 🔶 | backend: `/me/tasks`, `/manager/team/tasks|stats|members`, роли+team, тесты доступа | мобильные доски (личная и менеджерская), фильтры/сортировка, аналитика UI |
 | 9. Итог и календарь | 🔶 | backend: `schedule.py` — календарное событие/`.ics`/напоминания/черновик клиенту, только для confirmed-задач, тесты | резюме разговора, UI календаря/напоминаний, реальные адаптеры |
@@ -106,13 +106,26 @@
 
 ---
 
-## Мобильное приложение
+## Мобильное приложение (`apps/mobile`, Этап 3 ✅)
 
-- `apps/mobile` — **не существует**; Flutter SDK готов (вне репо).
-- Готовый план Этапа 3: ~25 файлов (конфиг, domain-модели, api-клиенты dio,
-  sqflite-слои, sync engine, Riverpod-контроллеры, UI, тесты);
-  API base URL через `--dart-define=API_BASE_URL` (эмулятор `10.0.2.2`,
-  iOS-sim `localhost`, устройство — LAN/HTTPS).
+Flutter 3.47.7 / Dart 3.13.5 (SDK вне репо). Слои: `core/`, `domain/` (enums,
+models, sync_models, ports), `application/` (Riverpod-контроллеры + providers),
+`infrastructure/` (api/dio, db/sqflite, repositories, sync), `ui/` (экраны).
+Подробности — `apps/mobile/README.md`.
+
+- **Auth**: OTP (`/auth/otp/request`, `/auth/login`), rotating refresh; сессия в
+  SQLite, авто-refresh на 401 в dio-интерцепторе.
+- **Доска**: личные задачи из кэша, pull-to-refresh запускает sync; offline-first.
+- **Локальная БД** (sqflite, `_schemaVersion = 1`): `tasks`, `agreements`,
+  `session`, `outbox` (уникальный `idempotency_key`), `sync_state`.
+- **Sync engine**: pull `GET /sync?since=` → apply (пропуск `version <= known`),
+  push outbox `POST /sync` → accepted снимает операцию, conflict сбрасывает токен
+  (полный re-pull), rejected снимает операцию; ретраи с backoff на network/5xx.
+- **Контакты**: порт `ContactsSource` над `flutter_contacts`; при отказе в
+  доступе — ручной ввод номера (graceful fallback).
+- ⚠️ **Ограничение среды**: нет Android SDK/Java/Xcode → проверка только на
+  уровне Dart (`flutter analyze` + `flutter test`); сборка/запуск — на машине с
+  SDK. Платформенное скрыто за портами/DI.
 
 ---
 
@@ -136,9 +149,12 @@
 | unit (4) | test_dates, test_rules, test_state_machine, test_exolve | относительные даты, пороги, переходы звонка, Exolve (события, тело маршрута, Call Record API, порт) |
 | integration (8) | test_auth, test_access, test_call_consent, test_agreements_tasks, test_schedule, test_sync, test_manager, test_ws_events | OTP/refresh, права ролей+команды, запись без consent, confirm→task, календарь/напоминания/черновик (только confirmed), sync-идемпотентность, WS auth/ownership/replay/live |
 | ml (2) | test_tone_client, test_pipeline | протокол T-one, слияние ролей/ресамплинг |
+| mobile (7) | domain/models, infrastructure/local_stores, infrastructure/sync_engine, application/auth_controller, application/board_controller, application/contacts_controller, widget/app | парсинг моделей, SQLite-хранилища, цикл sync + идемпотентность/конфликт/ретраи, контроллеры, экраны |
 
-**Итого: 105 passed** (unit 54 + integration 46 + ml 5). Интеграционные требуют
+Backend: **74 passed** (unit 38 + integration 31 + ml 5); интеграционные требуют
 `docker compose up -d postgres redis` (отдельная БД `agreements_test`).
+Mobile: **33 passed** (`flutter test`, без Docker); локальные хранилища тестируются
+через `sqflite_common_ffi`.
 
 ---
 
@@ -152,6 +168,10 @@ uv run pytest              # 74 теста
 docker compose up -d       # поднять стек
 uv run python -m app.cli seed   # демо-данные (если БД пуста)
 curl -k https://localhost/api/healthz   # живо (nginx TLS)
+
+cd apps/mobile
+flutter analyze            # lint мобильного (чисто)
+flutter test               # 33 теста (Dart-уровень, без Docker)
 ```
 
 Демо-флоу (проверен): OTP-логин (dev OTP 1234) → `/calls` POST + вебхук
