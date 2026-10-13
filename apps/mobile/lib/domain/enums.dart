@@ -73,6 +73,34 @@ enum CallSignalKind {
       );
 }
 
+/// User / counterparty consent to recording and AI processing (backend
+/// `ConsentStatus`).
+enum ConsentStatus {
+  granted('granted'),
+  denied('denied'),
+  withdrawn('withdrawn');
+
+  const ConsentStatus(this.wire);
+  final String wire;
+
+  static ConsentStatus fromWire(String value) => ConsentStatus.values
+      .firstWhere((s) => s.wire == value, orElse: () => ConsentStatus.denied);
+}
+
+/// How the consent was obtained (backend `ConsentMethod`).
+enum ConsentMethod {
+  appSettings('app_settings'),
+  audioNotice('audio_notice'),
+  dtmf('dtmf'),
+  smsLink('sms_link');
+
+  const ConsentMethod(this.wire);
+  final String wire;
+
+  static ConsentMethod fromWire(String value) => ConsentMethod.values
+      .firstWhere((m) => m.wire == value, orElse: () => ConsentMethod.appSettings);
+}
+
 enum AgreementStatus {
   detected('detected'),
   requiresReview('requires_review'),

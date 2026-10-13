@@ -4,6 +4,7 @@
 library;
 
 import 'call.dart';
+import 'consent.dart';
 import 'enums.dart';
 import 'models.dart';
 import 'sync_models.dart';
@@ -130,4 +131,24 @@ abstract class CallApi {
   });
 
   Future<Call> getCall(String id);
+}
+
+/// The app user's consent to recording / AI processing
+/// (`PUT /me/consent`, `POST /me/consent/withdraw`, `POST /me/data/delete`).
+abstract class ConsentApi {
+  Future<ConsentRecord> setAppConsent(bool granted);
+
+  Future<ConsentRecord> withdrawConsent();
+
+  /// Enqueues the real data-deletion job on the server.
+  Future<void> requestDataDeletion();
+}
+
+/// Local cache of the app user's consent decision. The server has no read
+/// endpoint for it, so the decision is cached here and written through on
+/// change; a fresh install asks again.
+abstract class ConsentStore {
+  Future<AppConsent> read();
+
+  Future<void> save(AppConsent consent);
 }

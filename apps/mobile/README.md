@@ -4,11 +4,13 @@
 запись и анализ разговора, карточки договорённостей, задачи, личная и
 менеджерская доски. Одна кодовая база для Android и iOS (`plan.md`, `AGENTS.md`).
 
-Текущий объём — **Этапы 3–4**: мобильная основа (авторизация, контакты, личная
-доска, SQLite-кэш, Repository и синхронизация) и **звонки на Dart-уровне** (порт
+Текущий объём — **Этапы 3–5**: мобильная основа (авторизация, контакты, личная
+доска, SQLite-кэш, Repository и синхронизация), **звонки на Dart-уровне** (порт
 `VoiceCallProvider` за DI, `CallController`, экран звонка, зеркало
-стейт-машины, mock-провайдер). Consent и live-карточка — следующие этапы
-(см. `TEAM_PLAN.md`).
+стейт-машины, mock-провайдер) и **consent-flow** (экран согласия на первом
+входе, настройки записи/ИИ: toggle, отзыв, удаление данных, политика;
+блокировка записи без согласия; отказ собеседника). Live-карточка (WS) —
+следующий этап (см. `TEAM_PLAN.md`).
 
 ## Слои (чистая архитектура)
 
@@ -18,17 +20,20 @@ lib/
   core/config.dart          конфиг; API base URL из --dart-define, не хардкод
   domain/                   сущности и правила, без Flutter/плагинов
     enums.dart              wire-enums (должны совпадать с backend)
-    models.dart             UserProfile, AuthSession, TaskItem, Agreement, Call, ContactItem
+    models.dart             UserProfile, AuthSession, TaskItem, Agreement, Call, ContactItem, ConsentRecord
     call.dart               CallSignal/CallState + зеркало стейт-машины звонка
+    consent.dart            AppConsent (решение пользователя; кэш + статус синка)
     sync_models.dart        SyncChange/Pull/Operation/Result (контракт /sync)
     ports.dart              интерфейсы (AuthApi, SessionStore, BoardApi, SyncApi,
-                            CallApi, VoiceCallProvider, ContactsSource,
-                            LocalBoardStore, OutboxStore, SyncStateStore)
+                            CallApi, ConsentApi, ConsentStore, VoiceCallProvider,
+                            ContactsSource, LocalBoardStore, OutboxStore, SyncStateStore)
   application/              контроллеры Riverpod + провайдеры (wiring)
-    call_controller.dart    сессия звонка (набор/ответ/отбой/mute, сигналы провайдера)
+    call_controller.dart    сессия звонка (набор/ответ/отбой/mute, сигналы провайдера,
+                            consent-статусы: notice/result, отказ собеседника)
+    consent_controller.dart решение пользователя (local-first + write-through на сервер)
   infrastructure/           реализации портов
-    api/                    dio-клиент (bearer, refresh-on-401), auth/board/sync/call API
-    db/                     sqflite: схема, session, outbox, sync_state, доска
+    api/                    dio-клиент (bearer, refresh-on-401), auth/board/sync/call/consent API
+    db/                     sqflite: схема (v2), session, outbox, sync_state, доска, app_settings
     repositories/           контакты устройства за портом
     sync/sync_engine.dart   цикл синхронизации
     voice/                  mock voice-провайдер (реальный SDK — за тем же портом)
@@ -89,6 +94,31 @@ missed), `dial`, `answer`, `decline`, `hangup`, `setMuted`. Платформен
 События совпадают с backend `CallEvent` (`incoming`, `ringing`, `answered`,
 `ended`, `dropped`, `missed`); статусы — с backend `CallStatus`.
 
+## Согласие (Этап 5)
+
+Запись и ИИ-обработка включаются только после явного согласия пользователя
+приложения (`plan.md` §10):
+
+- **Гейт первого входа** (`ui/screens/consent_screen.dart`): пока решение не
+  принято, вместо доски показывается экран согласия («Согласен и включить
+  запись» / «Не включать запись», ссылка на политику).
+- **Настройки** (`ui/screens/settings_screen.dart`, с доски — иконка ⚙):
+  переключатель записи/ИИ, отзыв согласия (с подтверждением), удаление данных
+  (реальный серверный флоу `POST /me/data/delete`), политика.
+- **Хранение**: решение кэшируется в SQLite (`app_settings`, схема v2) и
+  пишется на сервер (`PUT /me/consent`, `POST /me/consent/withdraw`); без сети —
+  pending-состояние с кнопкой «Повторить» (`ConsentController.retrySync`).
+  Кэш — единственный источник для гейта, т.к. GET-эндпоинта для consent нет.
+- **Блокировка записи**: `CallController` берёт `recordingEnabled` из согласия
+  при старте/ответе звонка; без согласия звонок остаётся обычным (без записи)
+  и предлагается ручной ввод договорённостей.
+- **Собеседник**: уведомление (`consent_notice`) проигрывает провайдер
+  (backend, Exolve `file_to_A`), результат (`consent_result`) придёт в звонок
+  событиями WS на Этапе 7; `markConsentResult(granted: false)` переводит звонок
+  в `in_progress` без записи и показывает «Собеседник отказался от записи».
+- Тексту согласия соответствует версия `consentTextVersion = 'v1'` (на сервере —
+  `CONSENT_VERSION`); при изменении текста приложение попросит согласие заново.
+
 ## Вход
 
 OTP-поток: `POST /auth/otp/request` → `POST /auth/login`. В dev-режиме OTP
@@ -100,7 +130,8 @@ refresh) сохраняется в SQLite и восстанавливается 
 ## Локальная БД и синхронизация
 
 Сервер — единственный источник истины; SQLite хранит только данные пользователя:
-`tasks`, `agreements`, `session`, `outbox`, `sync_state`. Цикл (`plan.md` §9):
+`tasks`, `agreements`, `session`, `outbox`, `sync_state`, `app_settings` (кэш
+согласия). Цикл (`plan.md` §9):
 
 ```
 pull (GET /sync?since=) → apply в локальную БД → push outbox (POST /sync)

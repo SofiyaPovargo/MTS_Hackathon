@@ -47,6 +47,7 @@ class CallController extends Notifier<CallState?> {
     }
 
     final externalId = await _voice.dial(normalized, name: name);
+    final consent = await ref.read(consentControllerProvider.future);
     state = CallState(
       status: CallLifecycleStatus.ringing,
       direction: CallDirection.outbound,
@@ -54,6 +55,7 @@ class CallController extends Notifier<CallState?> {
       name: name,
       callId: callId,
       externalId: externalId,
+      recordingEnabled: consent.recordingEnabled,
       startedAt: DateTime.now(),
     );
     return null;
@@ -65,6 +67,8 @@ class CallController extends Notifier<CallState?> {
     final current = state;
     if (current == null) return false;
     if (!await _voice.ensureMicrophonePermission()) return false;
+    final consent = await ref.read(consentControllerProvider.future);
+    state = current.copyWith(recordingEnabled: consent.recordingEnabled);
     final externalId = current.externalId;
     if (externalId != null) {
       await _voice.answer(externalId);
@@ -110,6 +114,39 @@ class CallController extends Notifier<CallState?> {
   /// Clears the terminal state so the overlay closes.
   void clear() => state = null;
 
+  // ---- server-driven lifecycle updates ---------------------------------------
+  //
+  // The backend owns the consent/recording transitions (play notice, record the
+  // participant result, start recording/analysis). Stage 7 (WebSocket) will
+  // call these; the mock and the tests drive them today. Every transition is
+  // validated by the mirrored state machine ([canTransitionCall]).
+
+  /// The counterparty notice is being played (backend `consent_notice`).
+  void markConsentNotice() => _advance(CallLifecycleStatus.consentNotice);
+
+  /// The consent result from the backend: recording starts when granted,
+  /// otherwise the call continues as an ordinary non-recorded call.
+  void markConsentResult({required bool granted}) {
+    _advance(CallLifecycleStatus.consentNotice);
+    _advance(CallLifecycleStatus.consentResult);
+    if (granted) {
+      _advance(CallLifecycleStatus.recording);
+    } else {
+      final current = state;
+      if (current != null && !current.isTerminal) {
+        state =
+            current.copyWith(recordingEnabled: false, participantDeclined: true);
+      }
+      _advance(CallLifecycleStatus.inProgress);
+    }
+  }
+
+  /// Recording + media stream started, ASR begins (backend `analyzing`).
+  void markAnalysisStarted() => _advance(CallLifecycleStatus.analyzing);
+
+  /// Live analysis is running (backend `in_progress`).
+  void markCallActive() => _advance(CallLifecycleStatus.inProgress);
+
   /// Dev-only helper: synthesize an incoming call when the provider supports it
   /// (the mock does). Feature code stays on this controller.
   void simulateIncomingCall({required String phone, String? name}) {
@@ -135,10 +172,14 @@ class CallController extends Notifier<CallState?> {
         _advance(CallLifecycleStatus.ringing);
       case CallSignalKind.answered:
         _advance(CallLifecycleStatus.answered);
-        // Stage 4 has no consent flow: the app user's recording is off, so the
-        // call goes straight to the active state (mirrors the backend
-        // no-app-consent branch). Stage 5 inserts consent_notice/result here.
-        _advance(CallLifecycleStatus.inProgress);
+        final active = state;
+        // With app consent the backend plays the notice to the counterparty
+        // (consent_notice); without it the call is ordinary (in_progress).
+        if (active != null && active.recordingEnabled) {
+          _advance(CallLifecycleStatus.consentNotice);
+        } else {
+          _advance(CallLifecycleStatus.inProgress);
+        }
       case CallSignalKind.ended:
         _endAs(CallLifecycleStatus.completed);
       case CallSignalKind.dropped:

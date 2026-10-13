@@ -21,12 +21,19 @@ String callStatusLabel(CallLifecycleStatus status) => switch (status) {
       CallLifecycleStatus.incoming => 'Входящий вызов',
       CallLifecycleStatus.ringing => 'Вызов…',
       CallLifecycleStatus.answered => 'Соединение установлено',
-      CallLifecycleStatus.consentNotice => 'Уведомление о записи',
-      CallLifecycleStatus.consentResult => 'Согласие',
+      CallLifecycleStatus.consentNotice => 'Собеседнику проигрывается уведомление о записи',
+      CallLifecycleStatus.consentResult => 'Проверка согласия',
       CallLifecycleStatus.recording => 'Идёт запись',
       CallLifecycleStatus.analyzing => 'Анализ разговора',
       CallLifecycleStatus.inProgress => 'Разговор',
       CallLifecycleStatus.completed => 'Звонок завершён',
       CallLifecycleStatus.missed => 'Пропущенный звонок',
       CallLifecycleStatus.failed => 'Ошибка соединения',
+    };
+
+String consentStatusLabel(ConsentStatus? status) => switch (status) {
+      null => 'Решение не выбрано',
+      ConsentStatus.granted => 'Запись и ИИ-обработка включены',
+      ConsentStatus.denied => 'Запись отключена',
+      ConsentStatus.withdrawn => 'Согласие отозвано',
     };
