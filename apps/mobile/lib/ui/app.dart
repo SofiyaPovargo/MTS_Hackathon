@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../application/providers.dart';
 import 'screens/board_screen.dart';
+import 'screens/call_screen.dart';
 import 'screens/login_screen.dart';
 
 class AgreementCaptureApp extends StatelessWidget {
@@ -17,6 +18,8 @@ class AgreementCaptureApp extends StatelessWidget {
         useMaterial3: true,
       ),
       home: const HomeGate(),
+      builder: (context, child) =>
+          CallOverlay(child: child ?? const SizedBox.shrink()),
     );
   }
 }

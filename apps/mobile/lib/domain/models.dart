@@ -242,6 +242,7 @@ class Call {
     required this.contactPhone,
     this.contactName,
     required this.status,
+    this.summary,
     this.startedAt,
     this.answeredAt,
     this.endedAt,
@@ -257,6 +258,7 @@ class Call {
         contactPhone: json['contact_phone'] as String,
         contactName: json['contact_name'] as String?,
         status: json['status'] as String,
+        summary: json['summary'] as String?,
         startedAt: parseDate(json['started_at'] as String?),
         answeredAt: parseDate(json['answered_at'] as String?),
         endedAt: parseDate(json['ended_at'] as String?),
@@ -271,6 +273,7 @@ class Call {
   final String contactPhone;
   final String? contactName;
   final String status;
+  final String? summary;
   final DateTime? startedAt;
   final DateTime? answeredAt;
   final DateTime? endedAt;
@@ -285,6 +288,7 @@ class Call {
         'contact_phone': contactPhone,
         'contact_name': contactName,
         'status': status,
+        'summary': summary,
         'started_at': startedAt?.toIso8601String(),
         'answered_at': answeredAt?.toIso8601String(),
         'ended_at': endedAt?.toIso8601String(),

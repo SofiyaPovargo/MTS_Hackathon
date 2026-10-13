@@ -25,6 +25,54 @@ enum CallDirection {
       CallDirection.values.firstWhere((d) => d.wire == value, orElse: () => CallDirection.outbound);
 }
 
+/// Call lifecycle (backend `CallStatus`). Mirrors the server state machine
+/// (`services/api/src/app/domain/state_machine.py`); the server stays the source
+/// of truth, the client only validates the same transitions for the UI.
+enum CallLifecycleStatus {
+  incoming('incoming'),
+  ringing('ringing'),
+  answered('answered'),
+  consentNotice('consent_notice'),
+  consentResult('consent_result'),
+  recording('recording'),
+  analyzing('analyzing'),
+  inProgress('in_progress'),
+  completed('completed'),
+  missed('missed'),
+  failed('failed');
+
+  const CallLifecycleStatus(this.wire);
+  final String wire;
+
+  bool get isTerminal =>
+      this == CallLifecycleStatus.completed ||
+      this == CallLifecycleStatus.missed ||
+      this == CallLifecycleStatus.failed;
+
+  static CallLifecycleStatus fromWire(String value) => CallLifecycleStatus.values.firstWhere(
+        (s) => s.wire == value,
+        orElse: () => CallLifecycleStatus.failed,
+      );
+}
+
+/// Provider signals the app reacts to (backend `CallEvent`).
+enum CallSignalKind {
+  incoming('incoming'),
+  ringing('ringing'),
+  answered('answered'),
+  ended('ended'),
+  dropped('dropped'),
+  missed('missed');
+
+  const CallSignalKind(this.wire);
+  final String wire;
+
+  static CallSignalKind fromWire(String value) => CallSignalKind.values.firstWhere(
+        (k) => k.wire == value,
+        orElse: () => CallSignalKind.dropped,
+      );
+}
+
 enum AgreementStatus {
   detected('detected'),
   requiresReview('requires_review'),
