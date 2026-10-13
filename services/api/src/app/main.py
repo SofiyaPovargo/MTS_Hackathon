@@ -11,6 +11,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from app.api.errors import register_exception_handlers
 from app.api.routes import router as api_router
+from app.api.ws import router as ws_router
 from app.config import Settings, get_settings
 from app.infrastructure.cache import Cache
 from app.infrastructure.db.session import create_engine_and_factory
@@ -65,6 +66,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     )
     register_exception_handlers(app)
     app.include_router(api_router, prefix=resolved.api_base_path)
+    app.include_router(ws_router, prefix=resolved.api_base_path)
     return app
 
 

@@ -19,7 +19,7 @@
 | 3. Мобильная основа | ⬜ | Flutter SDK установлен (3.47.7/Dart 3.13.5), план файлов готов | `apps/mobile` не создан: auth, контакты, SQLite+sync, доска, Repository |
 | 4. Звонки | 🔶 | `VoiceProviderPort` (mock) + webhook-маршруты в backend; state machine | реальный провайдер (блокер), VoIP SDK, экран звонка, исходящие |
 | 5. Consent flow | 🔶 | backend-логика целиком: `consent.py`, `call_session.py`, state machine, тесты notice/DTMF/refusal/withdraw | аудио-уведомление собеседнику (play_notice), DTMF через провайдера, мобильные экраны |
-| 6. Запись и анализ | 🔶 | research-слой `src/app/ml`: T-one ASR-клиент, pyannote-диаризация, STT-пайплайн (roles, resample); S3-хранилище; Celery-воркеры (заглушки) | VAD/чанкинг, worker-asr/ai задачи, LLM-извлечение, транскрипты в БД, WS-события |
+| 6. Запись и анализ | 🔶 | research-слой `src/app/ml`: T-one ASR-клиент, pyannote-диаризация, STT-пайплайн (roles, resample); S3-хранилище; Celery-воркеры (заглушки); **WS-эндпоинт `/api/ws/calls/{id}`** (JWT, replay+live, версия схемы 1) | VAD/чанкинг, worker-asr/ai задачи, LLM-извлечение, транскрипты в БД, эмиссия `partial_transcript`/`agreement_detected` |
 | 7. Договорённости и задачи | 🔶 | backend: agreement-статусы, confirm→task, PATCH-guards, audit; тесты | live-карточка (UI), напоминания, привязка к звонку в UI |
 | 8. Доски | 🔶 | backend: `/me/tasks`, `/manager/team/tasks|stats|members`, роли+team, тесты доступа | мобильные доски (личная и менеджерская), фильтры/сортировка, аналитика UI |
 | 9. Итог и календарь | 🔶 | черновик клиенту (`integrations/outbound.py`), `icalendar` в депсах, история звонков в БД | `CalendarPort`/`.ics` генерация, `RemindersPort`, резюме разговора, UI |
@@ -32,6 +32,8 @@
 ### api/ — HTTP-слой (полный, из Этапа 2)
 - `routes.py` — все эндпоинты: `/auth/*`, `/me*`, `/calls*`, `/agreements*`,
   `/tasks*`, `/manager/team/*`, `/sync` GET/POST, `/healthz`
+- `ws.py` — WebSocket `/ws/calls/{id}` (JWT, owner-only, replay+live, схема v1)
+  + `GET /ws/events/schema`
 - `schemas.py` — Pydantic v2: UserOut, AuthResponse, CallOut, AgreementOut,
   TaskOut, SyncChange/Pull/Push/Result, ErrorBody
 - `dependencies.py` (auth/role deps), `errors.py` (единый формат ошибок)
@@ -57,8 +59,8 @@
   конфликт → server version
 - `manager.py` — доска команды: роли+team_id проверяются на сервере
 - `access.py` — права user/manager
-- `events.py` — event hub в Redis (`events:call:{id}`), replayed для late joiners;
-  типы: `partial_transcript | agreement_detected | analysis_started | call_ended`
+- `events.py` — event hub в Redis (`events:call:{id}`): replay-список + pub/sub,
+  версия схемы 1, дедуп на стыке; типы: `partial_transcript | agreement_detected | analysis_started | call_ended`
 
 ### infrastructure/
 - `db/` — SQLAlchemy async: models, repositories, session; `migrations/` (Alembic,
@@ -129,10 +131,10 @@
 | Группа | Файлы | Что покрывают |
 |---|---|---|
 | unit (3) | test_dates, test_rules, test_state_machine | относительные даты, пороги, переходы звонка |
-| integration (6) | test_auth, test_access, test_call_consent, test_agreements_tasks, test_sync, test_manager | OTP/refresh, права ролей+команды, запись без consent, confirm→task, sync-идемпотентность |
+| integration (7) | test_auth, test_access, test_call_consent, test_agreements_tasks, test_sync, test_manager, test_ws_events | OTP/refresh, права ролей+команды, запись без consent, confirm→task, sync-идемпотентность, WS auth/ownership/replay/live |
 | ml (2) | test_tone_client, test_pipeline | протокол T-one, слияние ролей/ресамплинг |
 
-**Итого: 74 passed** (unit 38 + integration 31 + ml 5). Интеграционные требуют
+**Итого: 81 passed** (unit 38 + integration 38 + ml 5). Интеграционные требуют
 `docker compose up -d postgres redis` (отдельная БД `agreements_test`).
 
 ---

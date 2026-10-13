@@ -212,6 +212,20 @@ class ConsentOut(BaseModel):
     withdrawn_at: datetime | None
 
 
+class CallEventEnvelope(BaseModel):
+    """Versioned WebSocket frame on ``/api/ws/calls/{call_id}``.
+
+    The ``payload`` shape depends on ``event`` (``partial_transcript``,
+    ``agreement_detected``, ``analysis_started``, ``call_ended``); see
+    ``plan.md`` §13.
+    """
+
+    version: int = 1
+    event: str
+    call_id: uuid.UUID
+    payload: dict[str, object] = Field(default_factory=dict)
+
+
 class ErrorBody(BaseModel):
     detail: str
     correlation_id: str | None = None

@@ -12,7 +12,7 @@ Layered per `AGENTS.md`:
 
 ```
 src/app/
-  api/            HTTP routes, request/response schemas (Pydantic v2), dependencies
+  api/            HTTP routes, WebSocket endpoint, schemas (Pydantic v2), dependencies
   domain/         entities, enums, state machine, date/commitment rules (no IO)
   services/       auth, call session, consent, agreement, task, sync, manager, events
   infrastructure/ SQLAlchemy models/repositories, Redis cache, JWT, S3 storage
@@ -23,7 +23,7 @@ src/app/
   cli.py          `python -m app.cli seed` — demo team + users
 tests/
   unit/           date resolution, commitment rules, call state machine
-  integration/    auth, access, consent flow, agreements/tasks, sync, manager
+  integration/    auth, access, consent flow, agreements/tasks, sync, manager, WebSocket events
   ml/             T-one ASR client protocol, STT pipeline (roles, resample)
 ```
 
@@ -155,7 +155,9 @@ Misc
 | method | path           | notes                  |
 | ------ | -------------- | ---------------------- |
 | GET    | `/healthz`     | DB-backed liveness     |
+| GET    | `/ws/events/schema` | WebSocket envelope schema + event list |
 | GET    | `/docs`        | OpenAPI (FastAPI)      |
+| WS     | `/ws/calls/{id}` | live call events (JWT, owner-only; see below) |
 
 ## Data model
 
@@ -258,10 +260,26 @@ sent to the model unless the CLI is run explicitly.
 
 ## WebSocket events
 
-`services/events.py` provides the event hub (`CallEventMessage` persisted to
-Redis under `events:call:{id}` for late replay). Stage 6 wires it to the
-WebSocket endpoint. Known event types: `partial_transcript`,
-`agreement_detected`, `analysis_started`, `call_ended`.
+`/api/ws/calls/{call_id}` streams live call events; `services/events.py` is the
+hub (`CallEventMessage` persisted to Redis under `events:call:{id}` for replay,
+published on the same key for live delivery). Every frame is a versioned
+envelope (schema version 1):
+
+```json
+{"version": 1, "event": "agreement_detected", "call_id": "…", "payload": { … }}
+```
+
+| property        | value |
+| --------------- | ----- |
+| auth            | `Authorization: Bearer <access token>` **or** `?token=<access token>` (browsers) |
+| access          | call owner only — managers never receive audio/transcript |
+| handshake close | `4401` unauthorized · `4403` forbidden · `4404` unknown call |
+| replay          | persisted events are sent on connect, then live events follow |
+| event types     | `partial_transcript`, `agreement_detected`, `analysis_started`, `call_ended` |
+| contract        | `GET /ws/events/schema` (envelope JSON schema + event list, also in OpenAPI) |
+
+Event types are emitted by the ML workers (Stage 6, Track B), except
+`analysis_started` / `call_ended`, which the call session emits today.
 
 ## Workers
 
@@ -287,11 +305,12 @@ Covered rules: call state transitions, recording blocked without consent,
 relative date resolution, confidence threshold, manager/user access rights,
 sync idempotency, OTP login + refresh rotation + logout, consent notice/DTMF
 /withdrawal, agreement confirm→task, PATCH guards, cross-team 403s, the
-T-one ASR client protocol and the STT speaker/role merge.
+T-one ASR client protocol, the STT speaker/role merge, and the WebSocket event
+stream (auth, ownership, replay, live delivery).
 
 ## Roadmap
 
 Stage order follows `plan.md`: this is Stage 2 (plus research ML groundwork).
-Staged placeholders: wiring the ML pipeline into the workers and the WebSocket
-endpoint (Stage 6), tasks/reminders creation beyond the confirm flow,
-calendar/`.ics` (Stage 9), and the mobile app (Stage 3+).
+Staged placeholders: wiring the ML pipeline into the workers (Stage 6), reminders
+creation beyond the confirm flow, calendar/`.ics` (Stage 9), and the mobile app
+(Stage 3+).

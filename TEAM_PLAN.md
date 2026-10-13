@@ -105,9 +105,11 @@ pytest 74 passed), ML-исследование (ASR T-one + диаризация
 2. **Consent-уведомление** (нужно Этапу 5): `play_notice` через провайдера,
    DTMF 1/2, запись события в `consents`
 3. **WebSocket-эндпоинт** (нужен и мобильному, и ML):
-   - [ ] `/ws` с JWT-аутентификацией, версия в схеме событий + OpenAPI
-   - [ ] `partial_transcript | agreement_detected | analysis_started | call_ended`
-   - [ ] Регенерация API-клиента после изменения контракта
+   - [x] `/api/ws/calls/{id}` с JWT-аутентификацией (header или `?token=`),
+     владелец звонка; версия в схеме событий (`version: 1`) + `GET /api/ws/events/schema`
+   - [x] `partial_transcript | agreement_detected | analysis_started | call_ended` —
+     replay из Redis + live pub/sub, дедуп на стыке
+   - [ ] Регенерация API-клиента после изменения контракта (клиента ещё нет, Этап 3)
 4. **Календарь/напоминания** (Этап 9, backend): `CalendarPort.create_event()` +
    `.ics` (dependency `icalendar` уже есть), `RemindersPort.create_reminder()`,
    только после подтверждения пользователя (правило продукта!)
