@@ -1,5 +1,6 @@
 import 'package:agreement_capture/application/providers.dart';
 import 'package:agreement_capture/domain/call.dart';
+import 'package:agreement_capture/domain/consent.dart';
 import 'package:agreement_capture/domain/enums.dart';
 import 'package:agreement_capture/infrastructure/api/api_exception.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -8,13 +9,19 @@ import 'package:flutter_test/flutter_test.dart';
 import '../support/fakes.dart';
 
 ({ProviderContainer container, FakeVoiceCallProvider voice, FakeCallApi api})
-    buildContainer({bool permission = true, ApiException? apiError}) {
+    buildContainer({
+  bool permission = true,
+  ApiException? apiError,
+  AppConsent consent = AppConsent.undecided,
+}) {
   final voice = FakeVoiceCallProvider(microphoneGranted: permission);
   final api = FakeCallApi(error: apiError);
   final container = ProviderContainer(
     overrides: <Override>[
       voiceCallProviderProvider.overrideWithValue(voice),
       callApiProvider.overrideWithValue(api),
+      consentStoreProvider.overrideWithValue(InMemoryConsentStore(consent)),
+      consentApiProvider.overrideWithValue(FakeConsentApi()),
     ],
   );
   return (container: container, voice: voice, api: api);
@@ -198,5 +205,108 @@ void main() {
     await pumpEventQueue();
 
     expect(scope.container.read(callControllerProvider), isNull);
+  });
+
+  test('granted consent routes an answered call through the consent flow',
+      () async {
+    final scope = buildContainer(
+      consent: const AppConsent(status: ConsentStatus.granted, synced: true),
+    );
+    addTearDown(scope.container.dispose);
+    final controller = scope.container.read(callControllerProvider.notifier);
+
+    await controller.startOutgoing('+79000000002');
+    expect(
+      scope.container.read(callControllerProvider)?.recordingEnabled,
+      isTrue,
+    );
+
+    scope.voice.emit(const CallSignal(kind: CallSignalKind.answered));
+    await pumpEventQueue();
+    expect(
+      scope.container.read(callControllerProvider)?.status,
+      CallLifecycleStatus.consentNotice,
+    );
+
+    controller.markConsentResult(granted: true);
+    expect(
+      scope.container.read(callControllerProvider)?.status,
+      CallLifecycleStatus.recording,
+    );
+
+    controller.markAnalysisStarted();
+    expect(
+      scope.container.read(callControllerProvider)?.status,
+      CallLifecycleStatus.analyzing,
+    );
+
+    controller.markCallActive();
+    expect(
+      scope.container.read(callControllerProvider)?.status,
+      CallLifecycleStatus.inProgress,
+    );
+  });
+
+  test('counterparty refusal continues as a non-recorded ordinary call',
+      () async {
+    final scope = buildContainer(
+      consent: const AppConsent(status: ConsentStatus.granted, synced: true),
+    );
+    addTearDown(scope.container.dispose);
+    final controller = scope.container.read(callControllerProvider.notifier);
+
+    await controller.startOutgoing('+79000000002');
+    scope.voice.emit(const CallSignal(kind: CallSignalKind.answered));
+    await pumpEventQueue();
+    expect(
+      scope.container.read(callControllerProvider)?.status,
+      CallLifecycleStatus.consentNotice,
+    );
+
+    controller.markConsentResult(granted: false);
+
+    final call = scope.container.read(callControllerProvider);
+    expect(call?.status, CallLifecycleStatus.inProgress);
+    expect(call?.recordingEnabled, isFalse);
+    expect(call?.participantDeclined, isTrue);
+  });
+
+  test('no app consent keeps the call ordinary and recording off', () async {
+    final scope = buildContainer();
+    addTearDown(scope.container.dispose);
+    final controller = scope.container.read(callControllerProvider.notifier);
+
+    await controller.startOutgoing('+79000000002');
+    expect(
+      scope.container.read(callControllerProvider)?.recordingEnabled,
+      isFalse,
+    );
+
+    scope.voice.emit(const CallSignal(kind: CallSignalKind.answered));
+    await pumpEventQueue();
+
+    final call = scope.container.read(callControllerProvider);
+    expect(call?.status, CallLifecycleStatus.inProgress);
+    expect(call?.recordingEnabled, isFalse);
+    expect(call?.participantDeclined, isFalse);
+  });
+
+  test('answered incoming call carries the app consent recording flag',
+      () async {
+    final scope = buildContainer(
+      consent: const AppConsent(status: ConsentStatus.granted, synced: true),
+    );
+    addTearDown(scope.container.dispose);
+    final controller = scope.container.read(callControllerProvider.notifier);
+
+    scope.voice.simulateIncoming(phone: '+79000000003', name: 'Борис');
+    await pumpEventQueue();
+
+    expect(await controller.answerIncoming(), isTrue);
+    await pumpEventQueue();
+
+    final call = scope.container.read(callControllerProvider);
+    expect(call?.status, CallLifecycleStatus.consentNotice);
+    expect(call?.recordingEnabled, isTrue);
   });
 }

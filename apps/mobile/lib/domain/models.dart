@@ -310,3 +310,40 @@ class ContactItem {
   final String displayName;
   final String phone;
 }
+
+/// A consent record from the backend (`ConsentOut`).
+class ConsentRecord {
+  const ConsentRecord({
+    required this.id,
+    required this.subjectType,
+    required this.status,
+    required this.method,
+    this.grantedAt,
+    this.withdrawnAt,
+  });
+
+  factory ConsentRecord.fromJson(Map<String, dynamic> json) => ConsentRecord(
+        id: json['id'] as String,
+        subjectType: json['subject_type'] as String,
+        status: ConsentStatus.fromWire(json['status'] as String),
+        method: ConsentMethod.fromWire(json['method'] as String),
+        grantedAt: parseDate(json['granted_at'] as String?),
+        withdrawnAt: parseDate(json['withdrawn_at'] as String?),
+      );
+
+  final String id;
+  final String subjectType;
+  final ConsentStatus status;
+  final ConsentMethod method;
+  final DateTime? grantedAt;
+  final DateTime? withdrawnAt;
+
+  Map<String, dynamic> toJson() => <String, dynamic>{
+        'id': id,
+        'subject_type': subjectType,
+        'status': status.wire,
+        'method': method.wire,
+        'granted_at': grantedAt?.toIso8601String(),
+        'withdrawn_at': withdrawnAt?.toIso8601String(),
+      };
+}

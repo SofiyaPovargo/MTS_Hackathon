@@ -76,6 +76,32 @@ class CallScreen extends ConsumerWidget {
                 const SizedBox(height: 8),
                 const Text('Микрофон выключен'),
               ],
+              if (call.participantDeclined) ...<Widget>[
+                const SizedBox(height: 8),
+                const Text('Собеседник отказался от записи'),
+              ],
+              if (call.isConnected && !call.participantDeclined) ...<Widget>[
+                const SizedBox(height: 8),
+                Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: <Widget>[
+                    Icon(
+                      Icons.fiber_manual_record,
+                      size: 12,
+                      color: call.recordingEnabled
+                          ? Colors.red
+                          : Theme.of(context).colorScheme.outline,
+                    ),
+                    const SizedBox(width: 6),
+                    Text(
+                      call.recordingEnabled
+                          ? 'Идёт запись'
+                          : 'Запись выключена — договорённости вручную',
+                      style: Theme.of(context).textTheme.bodySmall,
+                    ),
+                  ],
+                ),
+              ],
               const Spacer(),
               _CallActions(call: call, controller: controller),
               const SizedBox(height: 12),

@@ -1,11 +1,16 @@
+import 'dart:io';
+
+import 'package:agreement_capture/domain/consent.dart';
 import 'package:agreement_capture/domain/enums.dart';
 import 'package:agreement_capture/domain/sync_models.dart';
 import 'package:agreement_capture/infrastructure/db/app_database.dart';
+import 'package:agreement_capture/infrastructure/db/consent_store.dart';
 import 'package:agreement_capture/infrastructure/db/local_board_store.dart';
 import 'package:agreement_capture/infrastructure/db/outbox_store.dart';
 import 'package:agreement_capture/infrastructure/db/session_store.dart';
 import 'package:agreement_capture/infrastructure/db/sync_state_store.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:path/path.dart' as p;
 import 'package:sqflite_common_ffi/sqflite_ffi.dart';
 
 import '../support/fakes.dart';
@@ -130,6 +135,60 @@ void main() {
 
       await store.removeAgreement('a1');
       expect(await store.allAgreements(), isEmpty);
+    });
+  });
+
+  group('SqliteConsentStore', () {
+    test('starts undecided and round-trips a decision', () async {
+      final store = SqliteConsentStore(database);
+      expect(await store.read(), AppConsent.undecided);
+
+      await store.save(
+        const AppConsent(status: ConsentStatus.granted, synced: true),
+      );
+      final restored = await store.read();
+      expect(restored.status, ConsentStatus.granted);
+      expect(restored.synced, isTrue);
+      expect(restored.recordingEnabled, isTrue);
+    });
+
+    test('schema v1 databases are upgraded with app_settings', () async {
+      final dir = await Directory.systemTemp.createTemp('consent_migration');
+      addTearDown(() => dir.delete(recursive: true));
+      final path = p.join(dir.path, 'legacy.db');
+
+      // A v1 database from before Stage 5 (no `app_settings` table yet).
+      final legacy = await databaseFactoryFfi.openDatabase(
+        path,
+        options: OpenDatabaseOptions(
+          version: 1,
+          onCreate: (db, version) async {
+            await db.execute(
+              'CREATE TABLE session(key TEXT PRIMARY KEY, value TEXT NOT NULL)',
+            );
+          },
+        ),
+      );
+      await legacy.insert('session', <String, Object?>{
+        'key': 'current',
+        'value': '{"x": 1}',
+      });
+      await legacy.close();
+
+      final migrated = AppDatabase(factory: databaseFactoryFfi, path: path);
+      addTearDown(migrated.close);
+      final store = SqliteConsentStore(migrated);
+      expect(await store.read(), AppConsent.undecided);
+
+      await store.save(const AppConsent(status: ConsentStatus.denied));
+      expect((await store.read()).status, ConsentStatus.denied);
+
+      // The legacy table survived the upgrade.
+      final db = await migrated.open();
+      expect(
+        await db.query('session', where: 'key = ?', whereArgs: const ['current']),
+        hasLength(1),
+      );
     });
   });
 }

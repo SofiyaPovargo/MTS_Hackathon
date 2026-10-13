@@ -39,6 +39,9 @@ class ApiClient {
   Future<Object?> patch(String path, {Object? body, bool auth = true}) =>
       _send('PATCH', path, body: body, auth: auth);
 
+  Future<Object?> put(String path, {Object? body, bool auth = true}) =>
+      _send('PUT', path, body: body, auth: auth);
+
   Future<Object?> delete(String path, {bool auth = true}) =>
       _send('DELETE', path, auth: auth);
 
