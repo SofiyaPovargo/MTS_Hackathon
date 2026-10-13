@@ -10,9 +10,11 @@ dependencies = [
     "numpy>=2.4.6",
     "omegaconf>=2.4.0",
     "openai",
+    "pyannote-audio>=4.0.7",
     "pydantic>=2",
     "python-dotenv",
     "torch>=2.14.1",
+    "websockets>=17.2",
 ]
 
 [dependency-groups]
