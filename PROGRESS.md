@@ -8,14 +8,15 @@ ML-исследование слито. **ML-пайплайн
 переведён в прод** (PR #5): запись → роли из каналов VoIP → сегментированный
 транскрипт → LLM-извлечение → валидация → `agreement_detected`; реальные воркеры
 и триггер `POST /calls/{id}/analyze`. **Приём аудио от клиента** `POST /calls/{id}/audio`
-слит (PR #8, трек C). **ML-трек B закрыт (ветка `track/ml-live`, влита в
-`development`)**: live-стриминг ASR (WS→Redis→T-one), инкрементальный extraction,
-VAD (Silero), LLM self-host (Ollama `qwen2.5:7b`), детерминированные даты;
-проверено end-to-end на реальных моделях. Осталось по ML: **Privacy**
-(deletion/retention/redaction), notifications-воркер, авто-триггер Exolve `crr`.
-Разработка ведётся в ветках `track/mobile-consent` (Xivalor),
-`track/ml-live` (Sofiya), `track/backend-voice` (Mav); после зелёных гейтов
-и ревью — мерж в `development`.
+слит (PR #8, трек C). **ML-трек B закрыт** (ветка `track/ml-live`, влита в
+`development`): live-стриминг ASR (WS→Redis→T-one), инкрементальный extraction,
+VAD (Silero), LLM self-host (Ollama `qwen2.5:7b`), детерминированные даты,
+**Privacy** (удаление данных, retention-пурж, redaction); проверено end-to-end на
+реальных моделях; тесты зелёные. **Вне ML (осталось)**: notifications-воркер
+(`send_reminder`), авто-триггер Exolve `crr` (трек C), шифрование транскриптов в БД
+(бэклог), мобильный live-клиент (трек A). Разработка ведётся в ветках
+`track/mobile-consent` (Xivalor), `track/ml-live` (Sofiya),
+`track/backend-voice` (Mav); после зелёных гейтов и ревью — мерж в `development`.
 
 ---
 
@@ -28,7 +29,7 @@ VAD (Silero), LLM self-host (Ollama `qwen2.5:7b`), детерминирован�
 | 3. Мобильная основа | ✅ | `apps/mobile` (Flutter): слои UI/App/Domain/Infra, OTP-auth + refresh, контакты за портом, личная доска, SQLite (tasks/agreements/outbox/sync_state/session), Repository + sync (pull→apply→push→ack→token), `--dart-define=API_BASE_URL`; analyze ✓ | сборка/прогон на эмуляторе (нет Android SDK/Xcode в среде) — см. ограничение |
 | 4. Звонки | 🔶 | backend: `VoiceProviderPort` (mock) + webhook-маршруты + state machine; **mobile (Dart)**: `VoiceCallProvider` за DI + `CallApi`, `CallController` (набор/ответ/отбой/mute), экран звонка (оверлей: таймер, mute, входящий), дозвон из контактов/доски, `MockVoiceCallProvider`, зеркало стейт-машины; analyze ✓, **53 теста** | нативный адаптер (CallKit/Telecom/Exolve SDK) и реальные входящие VoIP — нужна машина с Android SDK/Xcode; реальный провайдер (блокер) |
 | 5. Consent flow | ✅ | backend-логика целиком: `consent.py`, `call_session.py`, state machine, тесты notice/DTMF/refusal/withdraw; **mobile (Dart)**: гейт согласия на первом входе, настройки записи/ИИ (toggle, отзыв, удаление данных, политика), локальный кэш решения (`app_settings`, схема v2) + write-through `PUT /me/consent`/`withdraw`/`/me/data/delete`, блокировка записи без согласия в `CallController` (нет согласия → обычный звонок), отказ собеседника → звонок без записи, `consent_notice/consent_result` в зеркале стейт-машины; analyze ✓, тесты | аудио-уведомление собеседнику (play_notice) проигрывает провайдер (бэкенд, Exolve `file_to_A`); UI-статусы согласия в звонке получат данные от WS (Этап 7) |
-| 6. Запись и анализ | 🔶 | **прод-пайплайн** (`ml/pipeline.py`): декодер + роли из каналов VoIP / диаризация для mono-PSTN (`ml/stt`), транскрипт в `transcripts` (JSONB-сегменты, `role_source`), LLM+Instructor + валидация (`ml/extraction`, детерминированные даты), реальные воркеры `process_asr`/`run_llm_extraction`, эмиссия `partial_transcript`/`agreement_detected`, **приём аудио от клиента** `POST /calls/{id}/audio` (raw `audio/*`, mixed или `?leg=`, MinIO + `call_audio`, авто-постановка ASR, только после записи/согласия), триггер `POST /calls/{id}/analyze`, идемпотентность по `call_id`; **live-стриминг**: WS `/ws/calls/{id}/audio?leg=` → Redis → `worker-asr-live` (T-one стримингом, `partial_transcript` сразу) → `worker-ai-live` (инкрементальный extraction, upsert по fingerprint); **VAD** (Silero) в `ml/vad`; **LLM self-host** (Ollama `qwen2.5:7b` в compose) | авто-триггер по Exolve `crr` (скачивание записи в MinIO), шифрование/redaction (Privacy — отдельно) |
+| 6. Запись и анализ | ✅ | **прод-пайплайн** (`ml/pipeline.py`): декодер + роли из каналов VoIP / диаризация для mono-PSTN (`ml/stt`), транскрипт в `transcripts` (JSONB-сегменты, `role_source`), LLM+Instructor + валидация (`ml/extraction`, детерминированные даты), реальные воркеры `process_asr`/`run_llm_extraction`, эмиссия `partial_transcript`/`agreement_detected`, **приём аудио от клиента** `POST /calls/{id}/audio` (raw `audio/*`, mixed или `?leg=`, MinIO + `call_audio`, авто-постановка ASR, только после записи/согласия), триггер `POST /calls/{id}/analyze`, идемпотентность по `call_id`; **live-стриминг**: WS `/ws/calls/{id}/audio?leg=` → Redis → `worker-asr-live` (T-one стримингом, `partial_transcript` сразу) → `worker-ai-live` (инкрементальный extraction, upsert по fingerprint); **VAD** (Silero) в `ml/vad`; **LLM self-host** (Ollama `qwen2.5:7b` в compose); **Privacy**: удаление данных, retention-пурж (beat), redaction | авто-триггер Exolve `crr` (трек C); шифрование транскриптов в БД (бэклог) |
 | 7. Договорённости и задачи | 🔶 | backend: agreement-статусы, confirm→task, PATCH-guards, audit; тесты | live-карточка (UI), напоминания, привязка к звонку в UI |
 | 8. Доски | 🔶 | backend: `/me/tasks`, `/manager/team/tasks|stats|members`, роли+team, тесты доступа | мобильные доски (личная и менеджерская), фильтры/сортировка, аналитика UI |
 | 9. Итог и календарь | 🔶 | backend: `schedule.py` — календарное событие/`.ics`/напоминания/черновик клиенту, только для confirmed-задач, тесты | резюме разговора, UI календаря/напоминаний, реальные адаптеры |
