@@ -36,6 +36,8 @@ class Settings(BaseSettings):
     s3_secret_key: str = Field(default="minio123", alias="S3_SECRET_KEY")
     s3_bucket: str = Field(default="audio", alias="S3_BUCKET")
     audio_retention_days: int = Field(default=30, alias="AUDIO_RETENTION_DAYS")
+    # Client audio upload cap; the mobile client uploads a recorded call file.
+    max_audio_upload_mb: int = Field(default=64, alias="MAX_AUDIO_UPLOAD_MB")
 
     jwt_secret: str = Field(default="dev-only-change-me", alias="JWT_SECRET")
     jwt_algorithm: str = "HS256"
@@ -68,8 +70,9 @@ class Settings(BaseSettings):
     exolve_sip_resource_id: int = Field(default=0, alias="EXOLVE_SIP_RESOURCE_ID")
     exolve_consent_notice_file_id: str = Field(default="", alias="EXOLVE_CONSENT_NOTICE_FILE_ID")
     # Exolve has no server-side media stream: the mobile client uploads the SDK's
-    # mixed call audio to this ingest URL for the ML pipeline.
-    media_ingest_url: str = Field(default="ws://localhost:8000/api/ws/media", alias="MEDIA_INGEST_URL")
+    # mixed call audio to the ingest endpoint for the ML pipeline. The client
+    # posts the raw audio to ``POST {MEDIA_INGEST_URL}/calls/{call_id}/audio``.
+    media_ingest_url: str = Field(default="http://localhost:8000/api", alias="MEDIA_INGEST_URL")
 
     # --- ML pipeline (optional, Stage 6 research) ---
     # T-one streaming ASR server (WebSocket). The compose `asr` service

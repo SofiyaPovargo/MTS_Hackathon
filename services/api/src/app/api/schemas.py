@@ -93,6 +93,17 @@ class CallAnalyzeResponse(BaseModel):
     status: str
 
 
+class CallAudioAccepted(BaseModel):
+    """Stored client audio upload; ASR is queued once the recording is complete."""
+
+    call_id: uuid.UUID
+    role: str | None
+    content_type: str
+    bytes_stored: int
+    legs_present: list[str]
+    analysis_queued: bool
+
+
 class AgreementOut(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 

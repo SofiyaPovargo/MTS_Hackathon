@@ -34,3 +34,9 @@ class Conflict(DomainError):
 
 class ValidationFailed(DomainError):
     pass
+
+
+class PayloadTooLarge(DomainError):
+    def __init__(self, limit_bytes: int) -> None:
+        self.limit_bytes = limit_bytes
+        super().__init__(f"payload exceeds the {limit_bytes} byte limit")

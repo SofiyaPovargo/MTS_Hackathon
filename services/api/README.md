@@ -88,7 +88,9 @@ All settings come from the environment (`.env`, see `.env.example`). Key ones:
 | `EXOLVE_API_KEY`      | —                    | Exolve application API key (Bearer)       |
 | `EXOLVE_SIP_RESOURCE_ID` | 0                 | SIP resource id used by `SetCallRecordState` |
 | `EXOLVE_CONSENT_NOTICE_FILE_ID` | —          | audio notice played to the caller (`file_to_A`) |
-| `MEDIA_INGEST_URL`    | `ws://…/api/ws/media` | where the client uploads the mixed call audio |
+| `MEDIA_INGEST_URL`    | `http://localhost:8000/api` | base for the client audio upload (`POST …/calls/{id}/audio`) |
+| `MAX_AUDIO_UPLOAD_MB` | 64                   | cap for a single client audio upload      |
+| `AUDIO_RETENTION_DAYS`| 30                   | object expiry for stored audio            |
 | `CALENDAR_PROVIDER`   | ics                  | `ics` (in-app artifact)                   |
 | `REMINDERS_PROVIDER`  | local                | `local`                                   |
 | `MESSAGING_PROVIDER`  | draft                | `draft` (never sends)                     |
@@ -124,6 +126,7 @@ Calls (voice provider integration lives behind `VoiceProviderPort`)
 | GET    | `/calls`              | my calls                           |
 | GET    | `/calls/{id}`         | call detail (owner-only)           |
 | POST   | `/calls/{id}/events`  | provider webhook, signed by `VOICE_WEBHOOK_SECRET` |
+| POST   | `/calls/{id}/audio`   | client uploads the recorded audio (`audio/*` body; optional `?leg=operator|client`, `?duration_sec`). 202; queues ASR once complete. 409 if the call was not recorded, 413 oversized, 422 bad type, 403 foreign call |
 | POST   | `/calls/{id}/analyze` | queue ASR + extraction for a recorded call (202, returns `{call_id,status}`) |
 
 Agreements
@@ -231,10 +234,20 @@ notice, DTMF refusal and withdrawal.
 inbound API has no DTMF collection and exposes no server-side media stream, so
 for Exolve consent is `notice` (played to the caller via `file_to_A` in the
 call-control response) and the ML audio comes from the mobile client, which
-uploads the SDK's mixed stream to `MEDIA_INGEST_URL` (`open_media_stream()`
-returns that URL). The adapter maps Exolve progress notifications (`b/o/s/e`)
-to `CallEvent` and wraps the Call Record API (`SetCallRecordState`, `GetInfo`,
-`Download`). Decisions recorded in `plan.md` §11.1.
+uploads the SDK audio to `POST {MEDIA_INGEST_URL}/calls/{call_id}/audio`
+(`open_media_stream()` returns the `MEDIA_INGEST_URL` base). The adapter maps
+Exolve progress notifications (`b/o/s/e`) to `CallEvent` and wraps the Call
+Record API (`SetCallRecordState`, `GetInfo`, `Download`). Decisions recorded in
+`plan.md` §11.1.
+
+**Client audio ingest** (`services/audio_ingest.py`). The app POSTs the raw
+recording (`Content-Type: audio/*`) to `POST /calls/{id}/audio`; the body is the
+mixed stream, or one per-leg track with `?leg=operator` / `?leg=client`. The
+service writes to MinIO (SSE-AES256, retention expiry), fills the `call_audio`
+row and queues ASR once the recording is complete (mixed, or both legs).
+Re-uploading a role replaces the object and deletes the superseded one. The
+endpoint refuses any call without `recording_started_at` — the storage-side half
+of the `answered`+consent gate — and is owner-only.
 
 ## ML pipeline (research, Stage 6 groundwork)
 
@@ -244,8 +257,8 @@ implemented, gaps, config, how to run, privacy).
 Streaming ASR (T-one, Russian telephony 8 kHz) + speaker roles + LLM
 extraction, wired into the workers and the database.
 
-The audio stream arrives from the mobile client (`MEDIA_INGEST_URL`), not from
-the voice provider — see §11.1 of `plan.md`.
+The audio stream arrives from the mobile client (`POST /calls/{id}/audio`), not
+from the voice provider — see §11.1 of `plan.md`.
 
 ```
 src/app/ml/
@@ -284,10 +297,10 @@ through pyannote; the first speaker becomes `operator`, the second `client`.
    `agreement_extractions`), publish `agreement_detected`.
 
 Both steps are idempotent by `call_id`: re-processing reuses the stored
-transcript / agreements instead of recomputing. Trigger the pipeline with
-`POST /calls/{id}/analyze` (or automatically once the provider uploads the
-recording). The LLM part is off unless `LLM_BASE_URL`/`LLM_MODEL` are set
-(`llm_enabled`).
+transcript / agreements instead of recomputing. The client upload
+(`POST /calls/{id}/audio`) queues `worker-asr` automatically once the recording
+is complete; `POST /calls/{id}/analyze` re-queues explicitly. The LLM part is off
+unless `LLM_BASE_URL`/`LLM_MODEL` are set (`llm_enabled`).
 
 Run the T-one ASR server locally (optional; also reachable on the research
 Mac via Tailscale):

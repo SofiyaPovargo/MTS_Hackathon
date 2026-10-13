@@ -123,8 +123,13 @@ class InMemoryStorage(StoragePort):
         return None
 
 
-def new_audio_key(call_id: str) -> str:
-    return f"calls/{call_id}/audio/{uuid.uuid4().hex}.ogg"
+def new_audio_key(call_id: str, suffix: str = ".ogg") -> str:
+    """A unique, unguessable object key for one audio upload of a call.
+
+    ``suffix`` follows the uploaded content type (``.wav``, ``.ogg``, …): the ML
+    decoder picks the container from the extension.
+    """
+    return f"calls/{call_id}/audio/{uuid.uuid4().hex}{suffix}"
 
 
 def key_from_url(url: str) -> str:
