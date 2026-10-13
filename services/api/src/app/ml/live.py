@@ -110,7 +110,7 @@ async def stream_transcribe_and_store(
 
     segments: list[TranscriptSegment] = []
     queue: asyncio.Queue[tuple[str, TextPhrase | None]] = asyncio.Queue()
-    last_extract_at = 0.0
+    last_extract_at = time.monotonic()
     call_str = str(call_id)
 
     async def producer(leg: str) -> None:

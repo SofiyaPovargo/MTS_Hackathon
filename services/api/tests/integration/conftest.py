@@ -11,12 +11,14 @@ import subprocess
 import uuid
 from collections.abc import AsyncIterator, Iterator
 from typing import Any, cast
+from urllib.parse import quote
 
 import asyncpg
 import httpx
 import pytest
 from fastapi import FastAPI
 from sqlalchemy import text
+from sqlalchemy.engine import make_url
 from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker, create_async_engine
 from sqlalchemy.pool import NullPool
 
@@ -25,8 +27,30 @@ from app.infrastructure.db.base import Base
 from app.infrastructure.db.models import Team, User
 
 TEST_DB = "agreements_test"
-TEST_DATABASE_URL = os.environ["DATABASE_URL"]
+
+# Derive the admin connection from DATABASE_URL instead of hardcoding app/app,
+# so the tests run against whatever local Postgres a developer uses. The host is
+# overridable (CI uses a service name); locally it is the published port.
+_RAW_URL = make_url(os.environ["DATABASE_URL"])
+_DB_HOST = os.environ.get("TEST_DB_HOST", "localhost")
+_DB_PORT = _RAW_URL.port or 5432
+_DB_USER = _RAW_URL.username or "postgres"
+_DB_PASSWORD = _RAW_URL.password or ""
+
+
+def _async_url(database: str) -> str:
+    auth = quote(_DB_USER, safe="")
+    if _DB_PASSWORD:
+        auth += ":" + quote(_DB_PASSWORD, safe="")
+    return f"postgresql+asyncpg://{auth}@{_DB_HOST}:{_DB_PORT}/{database}"
+
+
+TEST_DATABASE_URL = _async_url(TEST_DB)
 TEST_REDIS_URL = os.environ["REDIS_URL"]
+
+# The app under test (create_app) reads DATABASE_URL from the environment; point
+# it at the isolated test database so app + seeded fixtures share one database.
+os.environ["DATABASE_URL"] = TEST_DATABASE_URL
 
 USER_PHONES = {
     "manager": "+79000000001",
@@ -38,7 +62,11 @@ USER_PHONES = {
 def _create_test_database_if_missing() -> None:
     async def _ensure() -> None:
         connection = await asyncpg.connect(
-            host="localhost", port=5432, user="app", password="app", database="postgres"
+            host=_DB_HOST,
+            port=_DB_PORT,
+            user=_DB_USER,
+            password=_DB_PASSWORD,
+            database="postgres",
         )
         exists = await connection.fetchval("SELECT 1 FROM pg_database WHERE datname = $1", TEST_DB)
         if not exists:
