@@ -14,16 +14,16 @@ Layered per `AGENTS.md`:
 src/app/
   api/            HTTP routes, WebSocket endpoint, schemas (Pydantic v2), dependencies
   domain/         entities, enums, state machine, date/commitment rules (no IO)
-  services/       auth, call session, consent, agreement, task, sync, manager, events
+  services/       auth, call session, consent, agreement, task, schedule, sync, manager, events
   infrastructure/ SQLAlchemy models/repositories, Redis cache, JWT, S3 storage
-  integrations/   external ports: VoiceProviderPort (mock), outbound drafts
+  integrations/   external ports: VoiceProviderPort (mock), calendar/reminders/messaging
   ml/             research layer: ASR (T-one client), diarization (pyannote), STT pipeline
   migrations/     Alembic migrations
   worker.py       Celery entrypoint (queues: asr, ai, notifications)
   cli.py          `python -m app.cli seed` — demo team + users
 tests/
   unit/           date resolution, commitment rules, call state machine
-  integration/    auth, access, consent flow, agreements/tasks, sync, manager, WebSocket events
+  integration/    auth, access, consent flow, agreements/tasks, schedule, sync, manager, WebSocket events
   ml/             T-one ASR client protocol, STT pipeline (roles, resample)
 ```
 
@@ -82,7 +82,11 @@ All settings come from the environment (`.env`, see `.env.example`). Key ones:
 | `DEV_OTP`             | —                    | fixed OTP accepted only in local/dev      |
 | `CONFIDENCE_THRESHOLD`| 0.8                  | below it an agreement is `requires_review`|
 | `CONSENT_MODE`        | notice               | `notice` \| `dtmf` \| `sms_link`          |
+| `VOICE_PROVIDER`      | mock                 | `mock` (real adapter added per provider)  |
 | `VOICE_WEBHOOK_SECRET`| dev-voice-secret     | header checked on call webhooks           |
+| `CALENDAR_PROVIDER`   | ics                  | `ics` (in-app artifact)                   |
+| `REMINDERS_PROVIDER`  | local                | `local`                                   |
+| `MESSAGING_PROVIDER`  | draft                | `draft` (never sends)                     |
 | `ASR_WS_URL`          | `ws://localhost:8080/api/ws` | T-one streaming ASR WebSocket  |
 | `HF_TOKEN`            | —                    | read-only Hugging Face token (pyannote)   |
 | `DATA_DIR`            | `data`               | `data/audio`, `data/transcripts` for STT CLI |
@@ -134,6 +138,12 @@ Tasks
 | GET    | `/me/tasks`             | tasks created from confirmed agreements |
 | PATCH  | `/tasks/{id}`           | edit (status transitions validated) |
 | POST   | `/tasks/{id}/complete`  | mark done                           |
+| POST   | `/tasks/{id}/calendar`  | write the task into the calendar (explicit action) |
+| GET    | `/tasks/{id}/calendar.ics` | portable `.ics` download         |
+| POST   | `/tasks/{id}/reminders` | schedule a reminder (`remind_at` in the future) |
+| GET    | `/tasks/{id}/reminders` | list reminders for the task         |
+| POST   | `/reminders/{id}/cancel` | cancel a reminder                  |
+| POST   | `/tasks/{id}/message-draft` | draft a client message — never sent |
 
 Manager board (role + team membership enforced server-side)
 
@@ -193,7 +203,10 @@ Agreement statuses: `detected`, `requires_review`, `needs_clarification`,
 - **Manager access.** Manager endpoints verify both role and team membership;
   cross-team and cross-user data return 403/404. Users see only their own data.
 - **No external writes without confirmation.** Calendar/reminder/messaging
-  ports exist behind confirmation; nothing is sent automatically.
+  ports exist behind confirmation; nothing is sent automatically. Each is a
+  user-triggered action on a task whose agreement is `confirmed`
+  (`services/schedule.py`); the message endpoint only produces a draft
+  (`sent: false`), and the `.ics` download touches no external system.
 
 ## Consent flow on `call.answered`
 
@@ -305,12 +318,14 @@ Covered rules: call state transitions, recording blocked without consent,
 relative date resolution, confidence threshold, manager/user access rights,
 sync idempotency, OTP login + refresh rotation + logout, consent notice/DTMF
 /withdrawal, agreement confirm→task, PATCH guards, cross-team 403s, the
-T-one ASR client protocol, the STT speaker/role merge, and the WebSocket event
-stream (auth, ownership, replay, live delivery).
+T-one ASR client protocol, the STT speaker/role merge, the WebSocket event
+stream (auth, ownership, replay, live delivery), and the confirmed-only
+calendar/reminder/draft side effects (future-only reminders, draft never sent).
 
 ## Roadmap
 
-Stage order follows `plan.md`: this is Stage 2 (plus research ML groundwork).
-Staged placeholders: wiring the ML pipeline into the workers (Stage 6), reminders
-creation beyond the confirm flow, calendar/`.ics` (Stage 9), and the mobile app
+Stage order follows `plan.md`: this is Stage 2 (plus research ML groundwork and
+the Track C voice/integration increments). Staged placeholders: wiring the ML
+pipeline into the workers (Stage 6), real third-party calendar/reminder
+adapters, the MTS Exolve voice adapter (plan.md §11.1), and the mobile app
 (Stage 3+).

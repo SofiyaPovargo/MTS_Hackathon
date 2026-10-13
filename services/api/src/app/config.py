@@ -56,6 +56,12 @@ class Settings(BaseSettings):
         description="notice | dtmf | sms_link — how the counterparty consents",
     )
 
+    # Outbound integrations. ``ics``/``local``/``draft`` are the in-app
+    # artifacts; real adapters (calendar, reminders, messaging) are add-ons.
+    calendar_provider: str = Field(default="ics", alias="CALENDAR_PROVIDER")
+    reminders_provider: str = Field(default="local", alias="REMINDERS_PROVIDER")
+    messaging_provider: str = Field(default="draft", alias="MESSAGING_PROVIDER")
+
     # --- ML pipeline (optional, Stage 6 research) ---
     # T-one streaming ASR server (WebSocket). The compose `asr` service
     # (profile `ml`) serves it on http://localhost:8080; on the research Mac

@@ -14,6 +14,8 @@ from app.domain.enums import (
     CallEvent,
     ConsentStatus,
     Owner,
+    ReminderChannel,
+    ReminderStatus,
     Role,
     SyncEntity,
     TaskPriority,
@@ -157,6 +159,39 @@ class TaskPatchRequest(BaseModel):
     due_time: time | None = None
     priority: TaskPriority | None = None
     status: TaskStatus | None = None
+
+
+class CalendarEventOut(BaseModel):
+    task_id: uuid.UUID
+    event_id: str
+    title: str
+    starts_at: datetime
+    ends_at: datetime
+
+
+class ReminderCreateRequest(BaseModel):
+    remind_at: datetime
+    channel: ReminderChannel = ReminderChannel.push
+
+
+class ReminderOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: uuid.UUID
+    task_id: uuid.UUID
+    remind_at: datetime
+    channel: ReminderChannel
+    status: ReminderStatus
+
+
+class MessageDraftOut(BaseModel):
+    """A draft only — never sent to the counterparty automatically."""
+
+    task_id: uuid.UUID
+    draft_id: str
+    phone: str
+    text: str
+    sent: bool = False
 
 
 class SyncChange(BaseModel):

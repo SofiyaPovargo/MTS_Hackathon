@@ -15,6 +15,11 @@ from app.api.ws import router as ws_router
 from app.config import Settings, get_settings
 from app.infrastructure.cache import Cache
 from app.infrastructure.db.session import create_engine_and_factory
+from app.integrations.outbound import (
+    calendar_factory,
+    messaging_factory,
+    reminders_factory,
+)
 from app.integrations.voice import voice_provider_factory
 from app.services.events import EventHub
 
@@ -33,6 +38,9 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     app.state.cache = cache
     app.state.voice_provider = voice_provider_factory(settings.voice_provider)
     app.state.event_hub = EventHub(cache)
+    app.state.calendar = calendar_factory(settings.calendar_provider)
+    app.state.reminders = reminders_factory(settings.reminders_provider)
+    app.state.messaging = messaging_factory(settings.messaging_provider)
 
     if settings.env != "test":
         try:

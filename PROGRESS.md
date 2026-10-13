@@ -22,7 +22,7 @@
 | 6. Запись и анализ | 🔶 | research-слой `src/app/ml`: T-one ASR-клиент, pyannote-диаризация, STT-пайплайн (roles, resample); S3-хранилище; Celery-воркеры (заглушки); **WS-эндпоинт `/api/ws/calls/{id}`** (JWT, replay+live, версия схемы 1) | VAD/чанкинг, worker-asr/ai задачи, LLM-извлечение, транскрипты в БД, эмиссия `partial_transcript`/`agreement_detected` |
 | 7. Договорённости и задачи | 🔶 | backend: agreement-статусы, confirm→task, PATCH-guards, audit; тесты | live-карточка (UI), напоминания, привязка к звонку в UI |
 | 8. Доски | 🔶 | backend: `/me/tasks`, `/manager/team/tasks|stats|members`, роли+team, тесты доступа | мобильные доски (личная и менеджерская), фильтры/сортировка, аналитика UI |
-| 9. Итог и календарь | 🔶 | черновик клиенту (`integrations/outbound.py`), `icalendar` в депсах, история звонков в БД | `CalendarPort`/`.ics` генерация, `RemindersPort`, резюме разговора, UI |
+| 9. Итог и календарь | 🔶 | backend: `schedule.py` — календарное событие/`.ics`/напоминания/черновик клиенту, только для confirmed-задач, тесты | резюме разговора, UI календаря/напоминаний, реальные адаптеры |
 | 10. Тестирование и демо | 🔶 | сквозное демо проверено: OTP → входящий → consent → задача → доска менеджера | тесты реальных звонков, 4G/обрыв WS, офлайн-синк, презентация |
 
 ---
@@ -55,6 +55,8 @@
 - `consent.py` — режимы notice/dtmf/sms_link; запись в `consents`
 - `agreement.py` — статусы, confirm→task, PATCH-guards (confirmed/rejected final)
 - `task.py` — статусы задач, complete
+- `schedule.py` — календарь/`.ics`, напоминания, черновик сообщения; только для
+  задач из `confirmed`-договорённости (порты за `Integrations`)
 - `sync.py` — delta pull (since-token), идемпотентный push (idempotency_key hash),
   конфликт → server version
 - `manager.py` — доска команды: роли+team_id проверяются на сервере
@@ -131,10 +133,10 @@
 | Группа | Файлы | Что покрывают |
 |---|---|---|
 | unit (3) | test_dates, test_rules, test_state_machine | относительные даты, пороги, переходы звонка |
-| integration (7) | test_auth, test_access, test_call_consent, test_agreements_tasks, test_sync, test_manager, test_ws_events | OTP/refresh, права ролей+команды, запись без consent, confirm→task, sync-идемпотентность, WS auth/ownership/replay/live |
+| integration (8) | test_auth, test_access, test_call_consent, test_agreements_tasks, test_schedule, test_sync, test_manager, test_ws_events | OTP/refresh, права ролей+команды, запись без consent, confirm→task, календарь/напоминания/черновик (только confirmed), sync-идемпотентность, WS auth/ownership/replay/live |
 | ml (2) | test_tone_client, test_pipeline | протокол T-one, слияние ролей/ресамплинг |
 
-**Итого: 81 passed** (unit 38 + integration 38 + ml 5). Интеграционные требуют
+**Итого: 89 passed** (unit 38 + integration 46 + ml 5). Интеграционные требуют
 `docker compose up -d postgres redis` (отдельная БД `agreements_test`).
 
 ---

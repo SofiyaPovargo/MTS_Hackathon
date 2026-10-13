@@ -21,6 +21,7 @@ from app.services.auth import AuthService
 from app.services.call_session import CallSessionService
 from app.services.consent import ConsentService
 from app.services.manager import ManagerDashboardService
+from app.services.schedule import ScheduleService
 from app.services.sync import SyncService
 from app.services.task import TaskService
 
@@ -69,6 +70,18 @@ def get_consent_service(session: AsyncSession = Depends(get_session)) -> Consent
 
 def get_task_service(session: AsyncSession = Depends(get_session)) -> TaskService:
     return TaskService(session)
+
+
+def get_schedule_service(
+    request: Request,
+    session: AsyncSession = Depends(get_session),
+) -> ScheduleService:
+    return ScheduleService(
+        session,
+        calendar=request.app.state.calendar,
+        reminders=request.app.state.reminders,
+        messaging=request.app.state.messaging,
+    )
 
 
 def get_agreement_service(

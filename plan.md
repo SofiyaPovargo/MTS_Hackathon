@@ -699,6 +699,20 @@ PATCH /tasks/{task_id}
 POST /tasks/{task_id}/complete
 ```
 
+### Календарь, напоминания, черновик (только после подтверждения)
+
+Действия пользователя по задаче из `confirmed`-договорённости. Ничего не
+создаётся автоматически, сообщение только черновик.
+
+```http
+POST /tasks/{task_id}/calendar        # записать в календарь (порт)
+GET  /tasks/{task_id}/calendar.ics    # переносимый .ics
+POST /tasks/{task_id}/reminders       # {remind_at, channel}
+GET  /tasks/{task_id}/reminders
+POST /reminders/{reminder_id}/cancel
+POST /tasks/{task_id}/message-draft   # черновик клиенту, sent: false
+```
+
 ### Доска менеджера
 
 ```http

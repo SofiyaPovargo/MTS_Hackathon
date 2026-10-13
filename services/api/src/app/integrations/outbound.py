@@ -71,3 +71,23 @@ class MessagingPort(Protocol):
 class NullMessaging:
     async def draft_message(self, *, phone: str, text: str) -> str:
         return f"msg-{uuid.uuid4().hex[:12]}"
+
+
+def calendar_factory(name: str) -> CalendarPort:
+    """Real calendar adapters (Google/Apple) are added later; ``ics`` is the
+    in-app artifact and the default."""
+    if name in {"ics", "null"}:
+        return NullCalendar()
+    raise ValueError(f"unknown calendar provider: {name}")
+
+
+def reminders_factory(name: str) -> RemindersPort:
+    if name in {"local", "null"}:
+        return NullReminders()
+    raise ValueError(f"unknown reminders provider: {name}")
+
+
+def messaging_factory(name: str) -> MessagingPort:
+    if name in {"draft", "null"}:
+        return NullMessaging()
+    raise ValueError(f"unknown messaging provider: {name}")

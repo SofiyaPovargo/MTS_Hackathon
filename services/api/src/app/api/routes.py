@@ -10,7 +10,7 @@ from __future__ import annotations
 
 import uuid
 
-from fastapi import APIRouter, Depends, Query, Request
+from fastapi import APIRouter, Depends, Query, Request, Response
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api import schemas
@@ -22,6 +22,7 @@ from app.api.dependencies import (
     get_consent_service,
     get_current_user,
     get_manager_service,
+    get_schedule_service,
     get_session,
     get_sync_service,
     get_task_service,
@@ -40,6 +41,7 @@ from app.services.auth import AuthService
 from app.services.call_session import CallSessionService, get_call_or_404
 from app.services.consent import ConsentService
 from app.services.manager import ManagerDashboardService
+from app.services.schedule import ScheduleService
 from app.services.sync import SyncService
 from app.services.task import TaskService
 
@@ -327,6 +329,102 @@ async def complete_task(
     task = await tasks.complete(user, task)
     await session.commit()
     return schemas.TaskOut.model_validate(task, from_attributes=True)
+
+
+# ---- calendar / reminders / draft (only after confirmation) ---------------------
+
+
+@router.post("/tasks/{task_id}/calendar", response_model=schemas.CalendarEventOut)
+async def create_task_calendar_event(
+    task_id: uuid.UUID,
+    user: User = Depends(get_current_user),
+    session: AsyncSession = Depends(get_session),
+    tasks: TaskService = Depends(get_task_service),
+    schedule: ScheduleService = Depends(get_schedule_service),
+) -> schemas.CalendarEventOut:
+    """Explicit user action: write the confirmed task into the calendar."""
+    task = await tasks.get_for_user(user, task_id)
+    result = await schedule.calendar_event(user, task)
+    await session.commit()
+    return schemas.CalendarEventOut.model_validate(result)
+
+
+@router.get("/tasks/{task_id}/calendar.ics")
+async def download_task_ics(
+    task_id: uuid.UUID,
+    user: User = Depends(get_current_user),
+    tasks: TaskService = Depends(get_task_service),
+    schedule: ScheduleService = Depends(get_schedule_service),
+) -> Response:
+    """Portable ``.ics`` — no external system is touched."""
+    task = await tasks.get_for_user(user, task_id)
+    content = await schedule.ics(user, task)
+    return Response(
+        content=content,
+        media_type="text/calendar",
+        headers={"Content-Disposition": f'attachment; filename="task-{task.id}.ics"'},
+    )
+
+
+@router.post("/tasks/{task_id}/reminders", response_model=schemas.ReminderOut, status_code=201)
+async def create_task_reminder(
+    task_id: uuid.UUID,
+    payload: schemas.ReminderCreateRequest,
+    user: User = Depends(get_current_user),
+    session: AsyncSession = Depends(get_session),
+    tasks: TaskService = Depends(get_task_service),
+    schedule: ScheduleService = Depends(get_schedule_service),
+) -> schemas.ReminderOut:
+    task = await tasks.get_for_user(user, task_id)
+    reminder = await schedule.create_reminder(
+        user, task, remind_at=payload.remind_at, channel=payload.channel
+    )
+    await session.commit()
+    return schemas.ReminderOut.model_validate(reminder, from_attributes=True)
+
+
+@router.get("/tasks/{task_id}/reminders", response_model=list[schemas.ReminderOut])
+async def list_task_reminders(
+    task_id: uuid.UUID,
+    user: User = Depends(get_current_user),
+    tasks: TaskService = Depends(get_task_service),
+    schedule: ScheduleService = Depends(get_schedule_service),
+) -> list[schemas.ReminderOut]:
+    task = await tasks.get_for_user(user, task_id)
+    rows = await schedule.list_reminders(task)
+    return [schemas.ReminderOut.model_validate(r, from_attributes=True) for r in rows]
+
+
+@router.post("/reminders/{reminder_id}/cancel", response_model=schemas.ReminderOut)
+async def cancel_reminder(
+    reminder_id: uuid.UUID,
+    user: User = Depends(get_current_user),
+    session: AsyncSession = Depends(get_session),
+    tasks: TaskService = Depends(get_task_service),
+    schedule: ScheduleService = Depends(get_schedule_service),
+) -> schemas.ReminderOut:
+    reminder = await repositories.get_reminder(session, reminder_id)
+    if reminder is None:
+        raise NotFound("reminder not found")
+    task = await tasks.get_for_user(user, reminder.task_id)
+    reminder = await schedule.cancel_reminder(user, task, reminder)
+    await session.commit()
+    return schemas.ReminderOut.model_validate(reminder, from_attributes=True)
+
+
+@router.post("/tasks/{task_id}/message-draft", response_model=schemas.MessageDraftOut)
+async def draft_task_message(
+    task_id: uuid.UUID,
+    user: User = Depends(get_current_user),
+    session: AsyncSession = Depends(get_session),
+    tasks: TaskService = Depends(get_task_service),
+    schedule: ScheduleService = Depends(get_schedule_service),
+) -> schemas.MessageDraftOut:
+    """Draft a client message. It is never sent automatically."""
+    task = await tasks.get_for_user(user, task_id)
+    result = await schedule.draft_message(user, task)
+    await session.commit()
+    return schemas.MessageDraftOut.model_validate(result)
 
 
 # ---- manager board -------------------------------------------------------------

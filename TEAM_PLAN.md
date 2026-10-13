@@ -112,6 +112,12 @@ pytest 74 passed), ML-исследование (ASR T-one + диаризация
 4. **Календарь/напоминания** (Этап 9, backend): `CalendarPort.create_event()` +
    `.ics` (dependency `icalendar` уже есть), `RemindersPort.create_reminder()`,
    только после подтверждения пользователя (правило продукта!)
+   - [x] `services/schedule.py`: календарь (`POST /tasks/{id}/calendar`),
+     `.ics` (`GET /tasks/{id}/calendar.ics`), напоминания
+     (`POST/GET /tasks/{id}/reminders`, `POST /reminders/{id}/cancel`),
+     черновик сообщения (`POST /tasks/{id}/message-draft`, `sent: false`)
+   - [x] Только для задач из `confirmed`-договорённости; `remind_at` — в будущем
+   - [ ] Реальные адаптеры календаря/напоминаний (за теми же портами)
 5. **Деплой** (не блокирует демо): VPS + тот же compose + Let's Encrypt;
    секреты из `.env`, не из коммитов.
 
