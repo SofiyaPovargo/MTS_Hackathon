@@ -63,6 +63,9 @@ Rules enforced by the compose file (see `AGENTS.md`):
 - Data lives only in named volumes (`postgres_data`, `redis_data`, `minio_data`).
 - Dev-only published ports (`8000`, `5432`, `6379`, `9000`, `9001`) live in
   `docker-compose.override.yml`, not in the production compose file.
+
+Production runs the base file plus `docker-compose.prod.yml` (real Let's
+Encrypt certificates, restart policies, dev ports closed); see `docs/deploy.md`.
 - `api` and workers share one image with different start commands; the ML-heavy
   extras go in the optional `ml` dependency group so the API image stays light.
 - The research `asr` service (T-one streaming ASR) is optional and starts only
