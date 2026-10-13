@@ -2,9 +2,10 @@
 
 Статус на 2026-10-13: Этапы 1–2 из `plan.md` **готовы и зелёные** (ruff ✓, mypy ✓,
 pytest 74 passed), ML-исследование (ASR T-one + диаризация pyannote) слито в
-`src/app/ml/` на ветке `development`. Команда: **Sofiya** (ML), **Mav**
-(backend), **Xivalor** (mobile). Актуальное состояние по каждому этапу — в
-`PROGRESS.md`.
+`src/app/ml/` на ветке `development`. **Этап 3 (мобильная основа) реализован** в
+ветке `track/mobile` (flutter analyze ✓, flutter test 33 passed). Команда:
+**Sofiya** (ML), **Mav** (backend), **Xivalor** (mobile). Актуальное состояние по
+каждому этапу — в `PROGRESS.md`.
 
 Главный принцип (AGENTS.md, «Working order»): этапы идут по порядку, но это
 касается **зависимостей**, а не людских ресурсов. Ниже — три независимых трека,
@@ -32,20 +33,25 @@ pytest 74 passed), ML-исследование (ASR T-one + диаризация
 
 Критический путь демо: «входящий звонок → задача на доске менеджера < 3 минут».
 
-**Этап 3. Мобильная основа** (первым делом; Flutter SDK уже стоит на dev-машине
-в `/home/dd/flutter` — Flutter 3.47.7 / Dart 3.13.5, в репозиторий не коммитится):
+**Этап 3. Мобильная основа** — ✅ **сделано** (ветка `track/mobile`;
+Flutter SDK 3.47.7 / Dart 3.13.5, в репозиторий не коммитится):
 
-- [ ] `apps/mobile`: `flutter create --platforms=android,ios --org ru.mts .`
-- [ ] Слои: UI / Application (Riverpod) / Domain / Infrastructure
-- [ ] Авторизация: OTP → `/auth/otp/request` + `/auth/login`, refresh-ротация
-- [ ] Контакты: порт над `flutter_contacts`; при запрете перимишена — ручной ввод
-- [ ] Личная доска задач (нетворк + локальный кэш)
-- [ ] SQLite (sqflite): только свои данные (tasks, agreements, outbox, sync_state)
-- [ ] Repository + sync: pull → apply → push → ack → `sync_token`, идемпотентность
-- [ ] API base URL через `--dart-define=API_BASE_URL`, не хардкодом
-- [ ] Гейты: `flutter analyze` + `flutter test` зелёные
-- **Готово, когда**: auth работает на эмуляторе против живого бэкенда, личная
-  доска показывает задачи из `/me/tasks`, офлайн-правки синкаются.
+- [x] `apps/mobile`: `flutter create --platforms=android,ios --org ru.mts`
+- [x] Слои: UI / Application (Riverpod) / Domain / Infrastructure
+- [x] Авторизация: OTP → `/auth/otp/request` + `/auth/login`, refresh-ротация
+- [x] Контакты: порт над `flutter_contacts`; при запрете перимишена — ручной ввод
+- [x] Личная доска задач (нетворк + локальный кэш)
+- [x] SQLite (sqflite): только свои данные (tasks, agreements, outbox, sync_state);
+      session хранится там же
+- [x] Repository + sync: pull → apply → push → ack → `sync_token`, идемпотентность
+- [x] API base URL через `--dart-define=API_BASE_URL`, не хардкодом
+- [x] Гейты: `flutter analyze` ✓ + `flutter test` ✓ (33 теста)
+- ⚠️ **Ограничение среды**: на dev-машине нет Android SDK/Java/Xcode, поэтому
+  сборка/запуск на эмуляторе здесь не проверялись — только Dart-уровень
+  (analyze + test). См. `apps/mobile/README.md`.
+- **Осталось для полного «готово»**: прогон на эмуляторе против живого бэкенда
+  на машине с Android SDK/Xcode.
+
 
 **Этап 4. Звонки** (после 3, нужен выбор voice-провайдера от трека C):
 - [ ] Порты: `IncomingCallHandler`, `CallSession`, платформенные адаптеры за DI
