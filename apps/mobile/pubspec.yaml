@@ -1,0 +1,36 @@
+name: agreement_capture
+description: "Agreement capture mobile app: calls, consent, AI-extracted agreements, tasks."
+publish_to: 'none'
+
+version: 0.1.0+1
+
+environment:
+  sdk: ^3.13.5
+
+dependencies:
+  flutter:
+    sdk: flutter
+  cupertino_icons: ^1.0.8
+  # State management (clean layering: UI <-> Application with Riverpod).
+  flutter_riverpod: ^2.6.1
+  # HTTP client for the backend API.
+  dio: ^5.7.0
+  # Local cache DB (server is the source of truth; SQLite is a cache + offline outbox).
+  sqflite: ^2.4.1
+  path: ^1.9.0
+  # Idempotency keys for the sync outbox.
+  uuid: ^4.5.1
+  # User-facing date formatting (device locale).
+  intl: ^0.19.0
+  # Device contacts behind a port; graceful fallback when permission is denied.
+  flutter_contacts: ^1.1.9+2
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^6.0.0
+  # Run sqflite-backed stores on the host in tests.
+  sqflite_common_ffi: ^2.3.4
+
+flutter:
+  uses-material-design: true

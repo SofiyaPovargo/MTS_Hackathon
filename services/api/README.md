@@ -208,6 +208,9 @@ notice, DTMF refusal and withdrawal.
 
 ## ML pipeline (research, Stage 6 groundwork)
 
+Full description: [`ML_PIPELINE.md`](ML_PIPELINE.md) (target pipeline, what is
+implemented, gaps, config, how to run, privacy).
+
 Streaming ASR (T-one, Russian telephony 8 kHz) + speaker diarization
 (pyannote) + transcript with `operator`/`client` roles.
 
