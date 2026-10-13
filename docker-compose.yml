@@ -142,6 +142,20 @@ services:
       redis:
         condition: service_healthy
 
+  # Celery beat: schedules the daily audio-retention purge (AUDIO_RETENTION_DAYS).
+  beat:
+    build:
+      context: services/api
+      target: worker
+    env_file: .env
+    environment:
+      DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-app}:${POSTGRES_PASSWORD:-app}@postgres:5432/${POSTGRES_DB:-agreements}
+      REDIS_URL: redis://redis:6379/0
+    command: ["uv", "run", "celery", "-A", "app.worker", "beat", "-l", "info"]
+    depends_on:
+      redis:
+        condition: service_healthy
+
   # Live streaming ASR: consumes Redis audio streams and runs T-one incrementally.
   # The T-one server is the optional `asr` service (profile `ml`); start it too:
   #   docker compose --profile ml up -d asr worker-asr-live

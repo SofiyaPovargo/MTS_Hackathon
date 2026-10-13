@@ -17,7 +17,6 @@ from app.api import schemas
 from app.api.dependencies import (
     get_agreement_service,
     get_auth_service,
-    get_cache,
     get_call_session_service,
     get_consent_service,
     get_current_user,
@@ -35,7 +34,6 @@ from app.domain.errors import (
     PermissionDenied,
     ValidationFailed,
 )
-from app.infrastructure.cache import Cache
 from app.infrastructure.db import repositories
 from app.infrastructure.db.models import User
 from app.services.agreement import AgreementService
@@ -116,12 +114,12 @@ async def withdraw_consent(
 
 @router.post("/me/data/delete", status_code=202)
 async def request_data_deletion(
+    request: Request,
     user: User = Depends(get_current_user),
     session: AsyncSession = Depends(get_session),
     consents: ConsentService = Depends(get_consent_service),
-    cache: Cache = Depends(get_cache),
 ) -> dict[str, str]:
-    """Real deletion flow: withdraw consent, audit, and enqueue the job."""
+    """Real deletion flow: withdraw consent, audit, and enqueue the purge job."""
     await consents.withdraw(user)
     await repositories.record_audit(
         session,
@@ -130,7 +128,7 @@ async def request_data_deletion(
         action="data.deletion_requested",
         actor_user_id=user.id,
     )
-    await cache.lpush("jobs:data-deletion", str(user.id))
+    request.app.state.analysis_queue.enqueue_data_deletion(str(user.id))
     await session.commit()
     return {"status": "scheduled", "message": "data deletion requested"}
 

@@ -148,7 +148,7 @@ wav (research уже умеет их синтезировать) — мобил�
 - [x] **Валидация дат** из LLM: `domain/dates.py` + `conversation_date` (по времени разговора + TZ юзера)
 - [x] **Триггер**: `POST /calls/{id}/analyze` (owner-only, 202, только для записанного звонка)
 - [x] Тесты: роли каналов, `extract_pair`, сквозной пайплайн (идемпотентность)
-- [ ] **Конфиденциальность**: шифрование аудио/транскриптов, redaction логов LLM
+- [x] **Конфиденциальность**: удаление данных по запросу (`delete_user_data`), retention-пурж аудио (Celery-beat), redaction PII в логах, аудио SSE-AES256 (шифрование транскриптов в БД — в бэклоге)
 - [x] **Приём аудио**: `POST /calls/{id}/audio` (raw `audio/*`, `?leg=`, размер, приватность) → MinIO → `call_audio` → авто-постановка `process_asr`; отказ без записи/согласия
 - [ ] Авто-триггер по Exolve `crr` (скачать запись Call Record API в MinIO)
 - [x] **Live-стриминг**: WS-аудио (`/ws/calls/{id}/audio?leg=`) → Redis → `worker-asr-live` (T-one стримингом, `partial_transcript` сразу) → `worker-ai-live` (инкрементальный extraction, upsert по fingerprint); VAD (Silero); LLM self-host (Ollama)

@@ -123,8 +123,10 @@ VAD (Silero), LLM self-host (Ollama `qwen2.5:7b`), детерминирован�
 - `run_llm_extraction` (worker-ai) → agreements + `agreement_detected`; оба идемпотентны по `call_id`
 - `stream_asr` (worker-asr-live) → live-стримы → транскрипт; `stream_extract`
   (worker-ai-live) → инкрементальный extraction (debounce)
-- `send_reminder`, `request_data_deletion` — заглушки (`implemented: False`);
-  retention-пурж и redaction — не реализованы (Privacy — следующий шаг)
+- `request_data_deletion` → реальное удаление данных пользователя
+  (`services/data_deletion.delete_user_data`: аудио в MinIO + звонки/транскрипты/
+  agreements/tasks); `purge_expired_audio` (Celery-beat) → retention-пурж аудио
+- `send_reminder` — заглушка (`implemented: False`)
 
 ### cli.py
 - `python -m app.cli seed` — демо-данные: менеджер Ирина +79000000001, Анна
@@ -244,7 +246,7 @@ flutter test               # 82 теста (Dart-уровень, без Docker)
 | **Авто-триггер анализа по Exolve `crr`** (скачать запись → MinIO → очередь) не реализован | Этап 6/демо: сейчас триггер ручной — `POST /calls/{id}/analyze` (live стартует по WS) |
 | У Exolve нет сбора DTMF → `CONSENT_MODE=notice` (§11.1) | Этап 5: для Exolve только notice; `dtmf` — за другими провайдерами |
 | Вебхуки Exolve подписаны общим секретом в URL (`?secret=`) — заголовки Exolve не ставит | Деплой: URL колбэка — секрет; `PUBLIC_BASE_URL` обязателен в бою |
-| **Privacy не сделана** (AGENTS, «Code and data security»): удаление данных по запросу (`request_data_deletion` — заглушка), retention-пурж просроченного аудио, redaction логов LLM, шифрование транскриптов | Этап 6: следующий шаг трека B |
+| **Privacy**: удаление данных, retention-пурж, redaction — **сделаны**; шифрование транскриптов в БД — в бэклоге | Этап 6: остался только storage-level encryption транскриптов (аудио уже SSE-AES256) |
 | ~~Выбор LLM (самохостинг)~~ **Ollama `qwen2.5:7b` в compose** (решено) | снят; извлечение включено |
 
 ## История (для контекста)

@@ -21,6 +21,7 @@ import time
 import uuid
 
 from celery import Celery
+from celery.schedules import crontab
 from redis.asyncio import Redis
 
 from app.config import Settings, get_settings
@@ -33,6 +34,7 @@ from app.ml.extraction.ports import ExtractionPort
 from app.ml.live import stream_transcribe_and_store
 from app.ml.pipeline import extract_and_store, extract_incremental, transcribe_and_store
 from app.ml.vad.ports import VadPort
+from app.services.data_deletion import delete_user_data, purge_expired_audio
 from app.services.events import EventHub
 
 logger = logging.getLogger(__name__)
@@ -53,6 +55,13 @@ celery_app.conf.update(
     timezone="UTC",
     task_track_started=True,
     worker_prefetch_multiplier=1,
+    beat_schedule={
+        # Enforce the audio retention period daily (AGENTS: limited retention).
+        "purge-expired-audio": {
+            "task": "purge_expired_audio",
+            "schedule": crontab(hour=3, minute=0),
+        },
+    },
 )
 
 
@@ -266,8 +275,44 @@ def send_reminder(reminder_id: str) -> dict[str, object]:
 
 @celery_app.task(queue="notifications", name="request_data_deletion")
 def request_data_deletion(user_id: str) -> dict[str, object]:
-    """Consume the data-deletion queue: purge audio and transcripts for a user."""
-    return {"user_id": user_id, "job": "data_deletion", "implemented": False}
+    """Purge a user's personal data (audio, calls, tasks) after deletion request."""
+    result = asyncio.run(_delete_user_data(user_id))
+    return {"user_id": user_id, "job": "data_deletion", **result}
+
+
+@celery_app.task(queue="notifications", name="purge_expired_audio")
+def purge_expired_audio_task() -> dict[str, object]:
+    """Celery-beat: drop audio recordings past their retention expiry."""
+    result = asyncio.run(_purge_expired_audio())
+    return {"job": "retention", **result}
+
+
+async def _delete_user_data(user_id: str) -> dict[str, int]:
+    settings = get_settings()
+    engine, factory = create_engine_and_factory(settings.database_url)
+    try:
+        storage = MinioStorage(settings)
+        async with factory() as session:
+            result = await delete_user_data(
+                session, user_id=uuid.UUID(user_id), storage=storage
+            )
+            await session.commit()
+            return result
+    finally:
+        await engine.dispose()
+
+
+async def _purge_expired_audio() -> dict[str, int]:
+    settings = get_settings()
+    engine, factory = create_engine_and_factory(settings.database_url)
+    try:
+        storage = MinioStorage(settings)
+        async with factory() as session:
+            result = await purge_expired_audio(session, storage=storage)
+            await session.commit()
+            return result
+    finally:
+        await engine.dispose()
 
 
 def main() -> None:
