@@ -60,6 +60,39 @@ class ExolveCallEvent:
     raw: dict[str, Any] = field(default_factory=dict)
 
 
+@dataclass(frozen=True)
+class ExolveSipRoute:
+    """How an inbound call that arrived on a SIP resource is handled."""
+
+    phone: str
+    sip_uri: str
+
+
+def parse_sip_routes(raw: str) -> dict[str, ExolveSipRoute]:
+    """Parse ``EXOLVE_SIP_ROUTES`` into ``sip_id -> route``.
+
+    Format: ``sip_id=phone:sip_uri`` entries separated by commas, e.g.
+    ``"1001=+79000000002:sip:anna@pbx,1002=+79000000003:sip:boris@pbx"``.
+    Malformed entries are skipped (the caller logs the resulting miss) instead
+    of failing every inbound call because of one bad line.
+    """
+    routes: dict[str, ExolveSipRoute] = {}
+    for entry in raw.split(","):
+        entry = entry.strip()
+        if not entry or "=" not in entry:
+            continue
+        sip_id, rest = entry.split("=", 1)
+        sip_id = sip_id.strip()
+        # ``sip_uri`` itself contains colons, so split the phone off once.
+        if ":" not in rest:
+            continue
+        phone, sip_uri = rest.split(":", 1)
+        phone, sip_uri = phone.strip(), sip_uri.strip()
+        if sip_id and phone and sip_uri:
+            routes[sip_id] = ExolveSipRoute(phone=phone, sip_uri=sip_uri)
+    return routes
+
+
 def parse_call_event(payload: dict[str, Any]) -> ExolveCallEvent:
     """Map a raw Exolve webhook payload onto the domain vocabulary.
 

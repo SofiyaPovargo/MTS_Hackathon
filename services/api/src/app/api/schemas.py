@@ -5,6 +5,7 @@ from __future__ import annotations
 import uuid
 from datetime import date, datetime, time
 from decimal import Decimal
+from typing import Any
 
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -102,6 +103,50 @@ class CallAudioAccepted(BaseModel):
     bytes_stored: int
     legs_present: list[str]
     analysis_queued: bool
+
+
+class ExolveControlRequest(BaseModel):
+    """Call-control webhook payload: a call arrived on a SIP resource."""
+
+    model_config = ConfigDict(extra="allow")
+
+    sip_id: int | str
+    number_a: str = Field(alias="numberA")
+    call_sid: str
+
+
+class ExolveControlResponse(BaseModel):
+    """JSON-RPC 2.0 routing body answered to the call-control webhook.
+
+    Exactly one of ``result`` (route the call) or ``error`` (do not route) is set.
+    """
+
+    id: int = 1
+    jsonrpc: str = "2.0"
+    sip_id: str
+    result: dict[str, Any] | None = None
+    error: dict[str, Any] | None = None
+
+
+class ExolveEventRequest(BaseModel):
+    """Progress-notification webhook payload (``b``/``o``/``s``/``h``/``e``/``crr``)."""
+
+    model_config = ConfigDict(extra="allow")
+
+    type: str
+    call_sid: str = ""
+    client_id: str | None = None
+    from_: str | None = Field(default=None, alias="from")
+    to: str | None = None
+    record_call: bool = False
+
+
+class ExolveEventAck(BaseModel):
+    """Outcome of one progress notification."""
+
+    status: str
+    call_id: uuid.UUID
+    event: str
 
 
 class AgreementOut(BaseModel):

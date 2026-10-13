@@ -83,11 +83,13 @@ All settings come from the environment (`.env`, see `.env.example`). Key ones:
 | `CONFIDENCE_THRESHOLD`| 0.8                  | below it an agreement is `requires_review`|
 | `CONSENT_MODE`        | notice               | `notice` \| `dtmf` \| `sms_link`          |
 | `VOICE_PROVIDER`      | mock                 | `mock` \| `exolve` (МТС Exolve adapter)   |
-| `VOICE_WEBHOOK_SECRET`| dev-voice-secret     | header checked on call webhooks           |
+| `VOICE_WEBHOOK_SECRET`| dev-voice-secret     | header or `?secret=` checked on call webhooks |
 | `EXOLVE_API_BASE_URL` | `https://api.exolve.ru` | Exolve API base                        |
 | `EXOLVE_API_KEY`      | —                    | Exolve application API key (Bearer)       |
 | `EXOLVE_SIP_RESOURCE_ID` | 0                 | SIP resource id used by `SetCallRecordState` |
 | `EXOLVE_CONSENT_NOTICE_FILE_ID` | —          | audio notice played to the caller (`file_to_A`) |
+| `EXOLVE_SIP_ROUTES`   | —                    | inbound routing `sip_id=phone:sip_uri`, comma-separated |
+| `PUBLIC_BASE_URL`     | `http://localhost:8000` | base URL for provider callbacks (`event_URL`) |
 | `MEDIA_INGEST_URL`    | `http://localhost:8000/api` | base for the client audio upload (`POST …/calls/{id}/audio`) |
 | `MAX_AUDIO_UPLOAD_MB` | 64                   | cap for a single client audio upload      |
 | `AUDIO_RETENTION_DAYS`| 30                   | object expiry for stored audio            |
@@ -128,6 +130,15 @@ Calls (voice provider integration lives behind `VoiceProviderPort`)
 | POST   | `/calls/{id}/events`  | provider webhook, signed by `VOICE_WEBHOOK_SECRET` |
 | POST   | `/calls/{id}/audio`   | client uploads the recorded audio (`audio/*` body; optional `?leg=operator|client`, `?duration_sec`). 202; queues ASR once complete. 409 if the call was not recorded, 413 oversized, 422 bad type, 403 foreign call |
 | POST   | `/calls/{id}/analyze` | queue ASR + extraction for a recorded call (202, returns `{call_id,status}`) |
+
+Voice provider webhooks (МТС Exolve, signed by `VOICE_WEBHOOK_SECRET` as an
+`X-Voice-Webhook-Secret` header or a `?secret=` query param — Exolve cannot set
+headers)
+
+| method | path                    | notes                                |
+| ------ | ----------------------- | ------------------------------------ |
+| POST   | `/voice/exolve/control` | inbound call control: route the call to the app user (`EXOLVE_SIP_ROUTES`), play the consent notice (`file_to_A`), point events at our `event_URL`. JSON-RPC body; unknown `sip_id` → `error`; idempotent per `call_sid` |
+| POST   | `/voice/exolve/events`  | progress notification `b/o/s/e/h/crr`: `b/o/s/e` drive the call lifecycle, others are acknowledged. Call resolved by `client_id` or `call_sid` |
 
 Agreements
 
@@ -239,6 +250,19 @@ uploads the SDK audio to `POST {MEDIA_INGEST_URL}/calls/{call_id}/audio`
 Exolve progress notifications (`b/o/s/e`) to `CallEvent` and wraps the Call
 Record API (`SetCallRecordState`, `GetInfo`, `Download`). Decisions recorded in
 `plan.md` §11.1.
+
+**Exolve webhooks** (`services/voice_webhooks.py`). `POST /voice/exolve/control`
+answers the inbound routing request: the `sip_id` is resolved to the app user and
+their SIP URI through `EXOLVE_SIP_ROUTES` (`sip_id=phone:sip_uri`), the call is
+recorded as a `Call` (`external_id = call_sid`, direction `inbound`) and the
+JSON-RPC body forwards the call, plays the notice (`file_to_A`) and points
+Exolve at `POST /voice/exolve/events`. The body echoes our call id as
+`client_id`, which — together with `Call.external_id` — correlates every later
+notification back to the call. `POST /voice/exolve/events` maps `b/o/s/e` to the
+*same* `CallSessionService` the mock provider uses, so the
+`answered`+consent recording gate applies unchanged; `h`, `crr` and unknown
+types are acknowledged without a transition. Both endpoints are signed with
+`VOICE_WEBHOOK_SECRET`; the callback base is `PUBLIC_BASE_URL`.
 
 **Client audio ingest** (`services/audio_ingest.py`). The app POSTs the raw
 recording (`Content-Type: audio/*`) to `POST /calls/{id}/audio`; the body is the

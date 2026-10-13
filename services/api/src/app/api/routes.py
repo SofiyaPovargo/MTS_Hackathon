@@ -21,6 +21,7 @@ from app.api.dependencies import (
     get_call_session_service,
     get_consent_service,
     get_current_user,
+    get_exolve_webhook_service,
     get_manager_service,
     get_schedule_service,
     get_session,
@@ -46,6 +47,7 @@ from app.services.manager import ManagerDashboardService
 from app.services.schedule import ScheduleService
 from app.services.sync import SyncService
 from app.services.task import TaskService
+from app.services.voice_webhooks import ExolveWebhookService
 
 router = APIRouter()
 
@@ -283,6 +285,52 @@ async def upload_call_audio(
         legs_present=sorted((audio.channel_urls or {}).keys()),
         analysis_queued=queued,
     )
+
+
+# ---- voice provider webhooks (МТС Exolve) -------------------------------------
+
+
+@router.post(
+    "/voice/exolve/control",
+    response_model=schemas.ExolveControlResponse,
+    response_model_exclude_none=True,
+    dependencies=[Depends(require_voice_webhook)],
+)
+async def exolve_call_control(
+    payload: schemas.ExolveControlRequest,
+    session: AsyncSession = Depends(get_session),
+    webhooks: ExolveWebhookService = Depends(get_exolve_webhook_service),
+) -> schemas.ExolveControlResponse:
+    """Exolve inbound routing: forward the call to the app user, play the notice.
+
+    Signed by the shared voice secret (``X-Voice-Webhook-Secret`` header or
+    ``?secret=`` query). The body routes the call to the SIP account of the app
+    user who owns the answering SIP resource and plays the consent notice
+    (``file_to_A``); an unknown resource is refused with a JSON-RPC error.
+    """
+    body = await webhooks.handle_control(payload.model_dump(by_alias=True, exclude_none=True))
+    await session.commit()
+    return schemas.ExolveControlResponse.model_validate(body)
+
+
+@router.post(
+    "/voice/exolve/events",
+    response_model=schemas.ExolveEventAck,
+    dependencies=[Depends(require_voice_webhook)],
+)
+async def exolve_call_event(
+    payload: schemas.ExolveEventRequest,
+    session: AsyncSession = Depends(get_session),
+    webhooks: ExolveWebhookService = Depends(get_exolve_webhook_service),
+) -> schemas.ExolveEventAck:
+    """Exolve progress notification (``b``/``o``/``s``/``h``/``e``/``crr``).
+
+    Drives the call lifecycle exactly like the mock webhook; unknown event types
+    are acknowledged without a transition so Exolve does not retry them.
+    """
+    call, status = await webhooks.handle_event(payload.model_dump(by_alias=True))
+    await session.commit()
+    return schemas.ExolveEventAck(status=status, call_id=call.id, event=payload.type)
 
 
 # ---- agreements ---------------------------------------------------------------

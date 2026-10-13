@@ -69,6 +69,13 @@ class Settings(BaseSettings):
     exolve_api_key: str = Field(default="", alias="EXOLVE_API_KEY")
     exolve_sip_resource_id: int = Field(default=0, alias="EXOLVE_SIP_RESOURCE_ID")
     exolve_consent_notice_file_id: str = Field(default="", alias="EXOLVE_CONSENT_NOTICE_FILE_ID")
+    # Inbound routing: which app user receives a call that arrived on a given SIP
+    # resource, and the SIP URI the app leg registers on. Entries
+    # ``sip_id=phone:sip_uri`` separated by commas (multi-user).
+    exolve_sip_routes: str = Field(default="", alias="EXOLVE_SIP_ROUTES")
+    # Public base URL used for provider callbacks (``event_URL``): it must be
+    # reachable by Exolve, so it is configuration, not derived from the request.
+    public_base_url: str = Field(default="http://localhost:8000", alias="PUBLIC_BASE_URL")
     # Exolve has no server-side media stream: the mobile client uploads the SDK's
     # mixed call audio to the ingest endpoint for the ML pipeline. The client
     # posts the raw audio to ``POST {MEDIA_INGEST_URL}/calls/{call_id}/audio``.
