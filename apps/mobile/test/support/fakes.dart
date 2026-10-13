@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:agreement_capture/domain/call.dart';
+import 'package:agreement_capture/domain/consent.dart';
 import 'package:agreement_capture/domain/enums.dart';
 import 'package:agreement_capture/domain/models.dart';
 import 'package:agreement_capture/domain/ports.dart';
@@ -90,6 +91,18 @@ Call testCall({
     version: 1,
     createdAt: DateTime.utc(2026, 10),
     updatedAt: DateTime.utc(2026, 10),
+  );
+}
+
+ConsentRecord testConsentRecord({
+  String id = '66666666-6666-6666-6666-666666666666',
+  ConsentStatus status = ConsentStatus.granted,
+}) {
+  return ConsentRecord(
+    id: id,
+    subjectType: 'app_user',
+    status: status,
+    method: ConsentMethod.appSettings,
   );
 }
 
@@ -367,4 +380,50 @@ class FakeCallApi implements CallApi {
 
   @override
   Future<Call> getCall(String id) async => testCall(id: id);
+}
+
+class InMemoryConsentStore implements ConsentStore {
+  InMemoryConsentStore([this.consent = AppConsent.undecided]);
+
+  AppConsent consent;
+
+  @override
+  Future<AppConsent> read() async => consent;
+
+  @override
+  Future<void> save(AppConsent value) async => consent = value;
+}
+
+class FakeConsentApi implements ConsentApi {
+  FakeConsentApi({this.error});
+
+  ApiException? error;
+  final List<bool> decisions = <bool>[];
+  int withdrawals = 0;
+  int deletions = 0;
+
+  @override
+  Future<ConsentRecord> setAppConsent(bool granted) async {
+    final failure = error;
+    if (failure != null) throw failure;
+    decisions.add(granted);
+    return testConsentRecord(
+      status: granted ? ConsentStatus.granted : ConsentStatus.denied,
+    );
+  }
+
+  @override
+  Future<ConsentRecord> withdrawConsent() async {
+    final failure = error;
+    if (failure != null) throw failure;
+    withdrawals++;
+    return testConsentRecord(status: ConsentStatus.withdrawn);
+  }
+
+  @override
+  Future<void> requestDataDeletion() async {
+    final failure = error;
+    if (failure != null) throw failure;
+    deletions++;
+  }
 }

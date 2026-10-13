@@ -8,6 +8,7 @@ import '../../infrastructure/api/api_exception.dart';
 import '../formats.dart';
 import 'contacts_screen.dart';
 import 'dialer_screen.dart';
+import 'settings_screen.dart';
 
 /// Personal board: the user's own tasks. Pull-to-refresh runs a sync; errors are
 /// shown without dropping the already-loaded list.
@@ -35,6 +36,13 @@ class BoardScreen extends ConsumerWidget {
             tooltip: 'Контакты',
             onPressed: () => Navigator.of(context).push(
               MaterialPageRoute<void>(builder: (_) => const ContactsScreen()),
+            ),
+          ),
+          IconButton(
+            icon: const Icon(Icons.settings_outlined),
+            tooltip: 'Настройки',
+            onPressed: () => Navigator.of(context).push(
+              MaterialPageRoute<void>(builder: (_) => const SettingsScreen()),
             ),
           ),
           IconButton(

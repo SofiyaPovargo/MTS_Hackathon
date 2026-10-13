@@ -13,7 +13,14 @@ class AppDatabase {
         _fileName = fileName,
         _path = path;
 
-  static const int schemaVersion = 1;
+  static const int schemaVersion = 2;
+
+  static const String _appSettingsTableSql = '''
+      CREATE TABLE app_settings(
+        key TEXT PRIMARY KEY,
+        value TEXT NOT NULL
+      )
+    ''';
 
   final DatabaseFactory _factory;
   final String _fileName;
@@ -37,9 +44,16 @@ class AppDatabase {
       options: OpenDatabaseOptions(
         version: schemaVersion,
         onCreate: _createSchema,
+        onUpgrade: _upgradeSchema,
         onConfigure: (db) => db.execute('PRAGMA foreign_keys = ON'),
       ),
     );
+  }
+
+  Future<void> _upgradeSchema(Database db, int oldVersion, int newVersion) async {
+    if (oldVersion < 2) {
+      await db.execute(_appSettingsTableSql);
+    }
   }
 
   Future<void> _createSchema(Database db, int version) async {
@@ -107,6 +121,7 @@ class AppDatabase {
         value TEXT NOT NULL
       )
     ''');
+    batch.execute(_appSettingsTableSql);
     await batch.commit(noResult: true);
   }
 }

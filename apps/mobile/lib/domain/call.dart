@@ -34,6 +34,8 @@ class CallState {
     this.callId,
     this.externalId,
     this.muted = false,
+    this.recordingEnabled = false,
+    this.participantDeclined = false,
     this.startedAt,
     this.answeredAt,
     this.endedAt,
@@ -51,6 +53,15 @@ class CallState {
   final String? externalId;
 
   final bool muted;
+
+  /// Whether this call is being recorded: the app user's consent at call start,
+  /// downgraded to false when the counterparty refuses.
+  final bool recordingEnabled;
+
+  /// Set when the counterparty refused recording; the call continues as an
+  /// ordinary call and the user edits/enters agreements manually.
+  final bool participantDeclined;
+
   final DateTime? startedAt;
   final DateTime? answeredAt;
   final DateTime? endedAt;
@@ -76,6 +87,8 @@ class CallState {
     String? externalId,
     String? name,
     bool? muted,
+    bool? recordingEnabled,
+    bool? participantDeclined,
     DateTime? answeredAt,
     DateTime? endedAt,
   }) {
@@ -87,6 +100,8 @@ class CallState {
       callId: callId ?? this.callId,
       externalId: externalId ?? this.externalId,
       muted: muted ?? this.muted,
+      recordingEnabled: recordingEnabled ?? this.recordingEnabled,
+      participantDeclined: participantDeclined ?? this.participantDeclined,
       startedAt: startedAt,
       answeredAt: answeredAt ?? this.answeredAt,
       endedAt: endedAt ?? this.endedAt,

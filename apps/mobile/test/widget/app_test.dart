@@ -1,4 +1,6 @@
 import 'package:agreement_capture/application/providers.dart';
+import 'package:agreement_capture/domain/consent.dart';
+import 'package:agreement_capture/domain/enums.dart';
 import 'package:agreement_capture/infrastructure/sync/sync_engine.dart';
 import 'package:agreement_capture/ui/app.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -41,6 +43,11 @@ void main() {
           authApiProvider.overrideWithValue(FakeAuthApi(session: testSession())),
           localBoardStoreProvider.overrideWithValue(local),
           syncEngineProvider.overrideWithValue(engine),
+          consentStoreProvider.overrideWithValue(
+            InMemoryConsentStore(
+              const AppConsent(status: ConsentStatus.granted, synced: true),
+            ),
+          ),
         ],
         child: const AgreementCaptureApp(),
       ),
@@ -48,5 +55,28 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.text('Позвонить клиенту'), findsOneWidget);
+  });
+
+  testWidgets('shows the consent gate instead of the board when undecided',
+      (tester) async {
+    final local = InMemoryBoardStore();
+    final session = InMemorySessionStore()..session = testSession();
+
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: <Override>[
+          sessionStoreProvider.overrideWithValue(session),
+          authApiProvider.overrideWithValue(FakeAuthApi(session: testSession())),
+          localBoardStoreProvider.overrideWithValue(local),
+          consentStoreProvider.overrideWithValue(InMemoryConsentStore()),
+          consentApiProvider.overrideWithValue(FakeConsentApi()),
+        ],
+        child: const AgreementCaptureApp(),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.text('Запись и ИИ-обработка звонков'), findsOneWidget);
+    expect(find.text('Позвонить клиенту'), findsNothing);
   });
 }
