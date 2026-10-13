@@ -86,6 +86,13 @@ class CallEventRequest(BaseModel):
     at: datetime | None = None
 
 
+class CallAnalyzeResponse(BaseModel):
+    """Accepted analysis job (async: the call is queued, not processed)."""
+
+    call_id: uuid.UUID
+    status: str
+
+
 class AgreementOut(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 

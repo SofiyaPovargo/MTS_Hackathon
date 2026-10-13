@@ -13,13 +13,16 @@ from app.domain.enums import ConsentSubjectType, ConsentType
 from app.infrastructure.db.models import (
     Agreement,
     AgreementEdit,
+    AgreementExtraction,
     AuditLog,
     Call,
+    CallAudio,
     Consent,
     IdempotencyKey,
     Reminder,
     Task,
     Team,
+    Transcript,
     User,
 )
 
@@ -68,6 +71,45 @@ async def list_calls(session: AsyncSession, user_id: uuid.UUID, *, limit: int = 
         select(Call).where(Call.user_id == user_id).order_by(Call.created_at.desc()).limit(limit)
     )
     return result.scalars().all()
+
+
+# ---- audio and transcripts --------------------------------------------------
+
+
+async def get_call_audio(session: AsyncSession, call_id: uuid.UUID) -> CallAudio | None:
+    result = await session.execute(select(CallAudio).where(CallAudio.call_id == call_id))
+    return result.scalar_one_or_none()
+
+
+async def get_transcript(session: AsyncSession, call_id: uuid.UUID) -> Transcript | None:
+    result = await session.execute(select(Transcript).where(Transcript.call_id == call_id))
+    return result.scalar_one_or_none()
+
+
+def build_transcript(
+    *,
+    call_id: uuid.UUID,
+    language: str,
+    full_text: str,
+    segments: list[dict[str, object]],
+    role_source: str,
+    status: str = "done",
+) -> Transcript:
+    return Transcript(
+        call_id=call_id,
+        language=language,
+        full_text=full_text,
+        segments=segments,
+        role_source=role_source,
+        status=status,
+    )
+
+
+async def has_agreement_extractions(session: AsyncSession, call_id: uuid.UUID) -> bool:
+    result = await session.execute(
+        select(AgreementExtraction.id).where(AgreementExtraction.call_id == call_id).limit(1)
+    )
+    return result.scalar_one_or_none() is not None
 
 
 # ---- agreements -------------------------------------------------------------

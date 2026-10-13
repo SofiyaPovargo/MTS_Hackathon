@@ -22,6 +22,7 @@ from app.integrations.outbound import (
 )
 from app.integrations.voice import voice_provider_factory
 from app.services.events import EventHub
+from app.services.jobs import CeleryAnalysisQueue, NullAnalysisQueue
 
 logger = logging.getLogger(__name__)
 
@@ -41,6 +42,9 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     app.state.calendar = calendar_factory(settings.calendar_provider)
     app.state.reminders = reminders_factory(settings.reminders_provider)
     app.state.messaging = messaging_factory(settings.messaging_provider)
+    app.state.analysis_queue = (
+        NullAnalysisQueue() if settings.env == "test" else CeleryAnalysisQueue(settings)
+    )
 
     if settings.env != "test":
         try:

@@ -190,6 +190,22 @@ async def test_extraction_service_runs_validation() -> None:
     assert commitments[0].ambiguity.contradictory_quote
 
 
+@pytest.mark.asyncio
+async def test_extract_pair_keeps_raw_and_validated_apart() -> None:
+    context = _context(TRANSCRIPT)
+    raw = _commitment(source_quote="текста в транскрипте нет", audio_start=50.0, audio_end=60.0)
+    service = ExtractionService(FakeExtractor([raw]))
+
+    raw_out, validated = await service.extract_pair(context)
+
+    # Сырой вывод LLM не мутируется валидатором (AGENTS: raw и validated раздельно).
+    assert raw_out[0].status is None
+    assert not raw_out[0].ambiguity.is_ambiguous
+    assert validated[0].status is AgreementStatus.needs_clarification
+    assert validated[0].ambiguity.contradictory_quote
+    assert raw_out[0] is not validated[0]
+
+
 # --- Промит -------------------------------------------------------------------
 
 

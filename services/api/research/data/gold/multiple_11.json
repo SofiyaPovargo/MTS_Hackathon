@@ -58,7 +58,7 @@
       "audio_start": 7.89,
       "audio_end": 10.07,
       "confidence": 1.0,
-      "status": "proposed",
+      "status": "detected",
       "uncertainty": []
     },
     {
@@ -73,7 +73,7 @@
       "audio_start": 10.43,
       "audio_end": 13.74,
       "confidence": 1.0,
-      "status": "proposed",
+      "status": "detected",
       "uncertainty": []
     },
     {

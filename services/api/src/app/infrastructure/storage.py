@@ -11,7 +11,7 @@ import asyncio
 import uuid
 from collections.abc import Callable
 from datetime import UTC, datetime, timedelta
-from typing import Protocol
+from typing import Protocol, cast
 
 import boto3
 from botocore.client import Config as BotoConfig
@@ -26,6 +26,7 @@ class StorageError(RuntimeError):
 
 class StoragePort(Protocol):
     async def put_bytes(self, key: str, data: bytes, content_type: str) -> str: ...
+    async def get_bytes(self, key: str) -> bytes: ...
     async def delete(self, key: str) -> None: ...
     async def presigned_get(self, key: str, *, expires_sec: int = 3600) -> str: ...
     async def create_bucket(self) -> None: ...
@@ -72,6 +73,13 @@ class MinioStorage:
         )
         return f"s3://{self._bucket}/{key}"
 
+    async def get_bytes(self, key: str) -> bytes:
+        def _do() -> bytes:
+            body = self._client.get_object(Bucket=self._bucket, Key=key)["Body"]
+            return bytes(body.read())
+
+        return cast("bytes", await self._guarded(_do))
+
     async def delete(self, key: str) -> None:
         await self._guarded(lambda: self._client.delete_object(Bucket=self._bucket, Key=key))
 
@@ -97,6 +105,12 @@ class InMemoryStorage(StoragePort):
         self._objects[key] = data
         return f"s3://memory/{key}"
 
+    async def get_bytes(self, key: str) -> bytes:
+        try:
+            return self._objects[key]
+        except KeyError as exc:
+            raise StorageError(f"object not found: {key}") from exc
+
     async def delete(self, key: str) -> None:
         self._objects.pop(key, None)
 
@@ -111,6 +125,19 @@ class InMemoryStorage(StoragePort):
 
 def new_audio_key(call_id: str) -> str:
     return f"calls/{call_id}/audio/{uuid.uuid4().hex}.ogg"
+
+
+def key_from_url(url: str) -> str:
+    """Extract the object key from a stored URL such as ``s3://bucket/key``.
+
+    The bucket is dropped: storage clients already know their bucket. A plain
+    key without a scheme is returned unchanged.
+    """
+    if "://" not in url:
+        return url
+    rest = url.split("://", 1)[1]
+    parts = rest.split("/", 1)
+    return parts[1] if len(parts) == 2 else parts[0]
 
 
 def retention_expiry(settings: Settings) -> datetime:

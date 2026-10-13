@@ -46,7 +46,7 @@
       "audio_start": 10.61,
       "audio_end": 14.62,
       "confidence": 1.0,
-      "status": "proposed",
+      "status": "detected",
       "uncertainty": []
     }
   ],

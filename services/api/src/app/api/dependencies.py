@@ -123,6 +123,7 @@ def get_call_session_service(
         consents=consents,
         events=request.app.state.event_hub,
         settings=settings,
+        analysis=request.app.state.analysis_queue,
     )
 
 

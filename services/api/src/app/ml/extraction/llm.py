@@ -15,6 +15,9 @@ from pydantic import BaseModel
 from app.domain.commitment import Commitment
 from app.ml.extraction.context import ConversationContext
 
+# Версия промпта для аудита (хранится в agreement_extractions.prompt_version).
+PROMPT_VERSION = "v1"
+
 _FIELDS = ", ".join(
     (
         "type",

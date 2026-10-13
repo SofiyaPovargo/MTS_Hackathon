@@ -143,6 +143,10 @@ class CallAudio(UUIDPrimaryKeyMixin, CreatedAtMixin, Base):
     storage_url: Mapped[str] = mapped_column(String(1000), nullable=False)
     content_type: Mapped[str] = mapped_column(String(64), nullable=False, default="audio/ogg")
     duration_sec: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    # Per-leg objects for channel-separated (VoIP) recordings: role -> storage
+    # url (``{"operator": ..., "client": ...}``). ``storage_url`` stays the
+    # mixed/primary object; when legs exist diarization is not needed.
+    channel_urls: Mapped[dict[str, str] | None] = mapped_column(JSONB, nullable=True)
     # Audio contains personal data and must not be kept forever.
     expires_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
@@ -157,6 +161,10 @@ class Transcript(UUIDPrimaryKeyMixin, CreatedAtMixin, UpdatedAtMixin, Base):
     )
     language: Mapped[str] = mapped_column(String(8), nullable=False, default="ru")
     full_text: Mapped[str | None] = mapped_column(Text, nullable=True)
+    # Segmented transcript with speaker roles, as produced by the STT pipeline.
+    segments: Mapped[list[dict[str, object]] | None] = mapped_column(JSONB, nullable=True)
+    # Audit field: how speaker roles were obtained (channel | diarization | unknown).
+    role_source: Mapped[str] = mapped_column(String(16), nullable=False, default="unknown")
     status: Mapped[str] = mapped_column(String(32), nullable=False, default="processing")
 
     call: Mapped[Call] = relationship(back_populates="transcript")
