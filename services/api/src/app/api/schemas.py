@@ -95,7 +95,12 @@ class CallAnalyzeResponse(BaseModel):
 
 
 class CallAudioAccepted(BaseModel):
-    """Stored client audio upload; ASR is queued once the recording is complete."""
+    """Stored client audio (a whole object or one resumable chunk).
+
+    ``offset`` is the durable byte count for the role after the request and
+    ``complete`` whether the recording is fully stored: a client resuming after
+    a network drop continues from ``offset`` (see ``services/audio_ingest.py``).
+    """
 
     call_id: uuid.UUID
     role: str | None
@@ -103,6 +108,8 @@ class CallAudioAccepted(BaseModel):
     bytes_stored: int
     legs_present: list[str]
     analysis_queued: bool
+    offset: int
+    complete: bool
 
 
 class ExolveControlRequest(BaseModel):

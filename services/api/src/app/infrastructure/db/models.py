@@ -147,6 +147,11 @@ class CallAudio(UUIDPrimaryKeyMixin, CreatedAtMixin, Base):
     # url (``{"operator": ..., "client": ...}``). ``storage_url`` stays the
     # mixed/primary object; when legs exist diarization is not needed.
     channel_urls: Mapped[dict[str, str] | None] = mapped_column(JSONB, nullable=True)
+    # In-flight chunked upload state per role (``mixed``/``operator``/``client``):
+    # ``{role: {upload_id, offset, total, content_type, parts: [{key, size}]}}``.
+    # Let a client resume after a network drop: whatever was acknowledged here is
+    # already durable in object storage.
+    pending_uploads: Mapped[dict[str, object] | None] = mapped_column(JSONB, nullable=True)
     # Audio contains personal data and must not be kept forever.
     expires_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 

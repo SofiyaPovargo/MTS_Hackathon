@@ -132,6 +132,16 @@ def new_audio_key(call_id: str, suffix: str = ".ogg") -> str:
     return f"calls/{call_id}/audio/{uuid.uuid4().hex}{suffix}"
 
 
+def chunk_key(call_id: str, upload_id: str, index: int) -> str:
+    """Object key for one durably stored chunk of a resumable upload.
+
+    Parts live under the upload id and are assembled into the final object once
+    the last chunk arrives, then deleted: a resumed upload never re-sends bytes
+    that already reached storage.
+    """
+    return f"calls/{call_id}/audio/{upload_id}/part-{index:05d}"
+
+
 def key_from_url(url: str) -> str:
     """Extract the object key from a stored URL such as ``s3://bucket/key``.
 

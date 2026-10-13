@@ -128,7 +128,7 @@ Calls (voice provider integration lives behind `VoiceProviderPort`)
 | GET    | `/calls`              | my calls                           |
 | GET    | `/calls/{id}`         | call detail (owner-only)           |
 | POST   | `/calls/{id}/events`  | provider webhook, signed by `VOICE_WEBHOOK_SECRET` |
-| POST   | `/calls/{id}/audio`   | client uploads the recorded audio (`audio/*` body; optional `?leg=operator|client`, `?duration_sec`). 202; queues ASR once complete. 409 if the call was not recorded, 413 oversized, 422 bad type, 403 foreign call |
+| POST   | `/calls/{id}/audio`   | client uploads the recorded audio (`audio/*` body; optional `?leg=operator|client`, `?duration_sec`, `?restart`). **Resumable**: with `Content-Range: bytes <start>-<end>/<total>` the body is one chunk, stored immediately, and the response `offset` says where to resume after a network drop (a retried chunk is idempotent; a gap → 409 with `expected_offset`). 202; queues ASR once complete. 409 if the call was not recorded, 413 oversized, 422 bad type/bad range, 403 foreign call |
 | POST   | `/calls/{id}/analyze` | queue ASR + extraction for a recorded call (202, returns `{call_id,status}`) |
 
 Voice provider webhooks (МТС Exolve, signed by `VOICE_WEBHOOK_SECRET` as an
@@ -272,6 +272,16 @@ row and queues ASR once the recording is complete (mixed, or both legs).
 Re-uploading a role replaces the object and deletes the superseded one. The
 endpoint refuses any call without `recording_started_at` — the storage-side half
 of the `answered`+consent gate — and is owner-only.
+
+The upload is **resumable**, because a dropped connection must not lose what was
+already recorded: with `Content-Range: bytes <start>-<end>/<total>` the body is
+one chunk and is written to storage immediately, so the `offset` returned is
+durable. A client that reconnects (Wi-Fi hand-off, 4G dead spot, weak signal)
+resumes from that offset; re-sending an already-stored chunk is idempotent
+(accepted, not stored twice); a gap or partial overlap is `409` with
+`expected_offset`. Chunks are assembled into the final object once the last one
+arrives and then deleted; `?restart=true` abandons an in-flight upload. Without
+`Content-Range` the upload is a single whole-object request (replacement).
 
 ## ML pipeline (research, Stage 6 groundwork)
 

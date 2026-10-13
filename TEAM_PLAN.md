@@ -43,6 +43,7 @@ pytest 135 passed. **Трек C (Mav): добавлен приём аудио о
 
 ### Mav — backend и интеграции (Трек C)
 - [x] **Приём аудио от клиента** (критический путь): `POST /calls/{id}/audio` → MinIO → `call_audio` → очередь `process_asr` (202; отказ 409 без записи/согласия, mixed или per-leg `?leg=`)
+- [x] **Докачка записи при обрыве сети** (критический путь): докачиваемая загрузка по `Content-Range` (чанки сразу в MinIO, durable `offset`), идемпотентный повтор чанка, рассинхрон → 409 `expected_offset`; сборка чанков в объект `call_audio` и удаление чанков; тесты обрыва (Wi-Fi/4G/слабый сигнал); клиентская буферизация+ретрай — трек A
 - [ ] **Exolve `crr`** → скачать запись (Call Record API) → MinIO → авто-постановка ASR
 - [x] **Exolve webhooks** (call-control + statistics `b/o/s/h/e/crr`) end-to-end: `POST /api/voice/exolve/control` (маршрут по `EXOLVE_SIP_ROUTES`, `Call`, `file_to_A`, `event_URL`) + `POST /api/voice/exolve/events` (`b/o/s/e` → `CallSessionService`); `crr` — за следующим пунктом
 - [x] **Consent-уведомление** в бою (`file_to_A`, режим `notice`) + запись в `consents`: notice в ответе call-control, ветка согласия — по событию `s`

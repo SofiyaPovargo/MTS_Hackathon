@@ -20,6 +20,7 @@ from app.domain.errors import (
     NotFound,
     PayloadTooLarge,
     PermissionDenied,
+    UploadOffsetMismatch,
     ValidationFailed,
 )
 from app.infrastructure.security import TokenError
@@ -34,6 +35,7 @@ def register_exception_handlers(app: FastAPI) -> None:
     app.add_exception_handler(ConsentRequired, _handle_consent)
     app.add_exception_handler(InvalidStateTransition, _handle_conflict)
     app.add_exception_handler(Conflict, _handle_conflict)
+    app.add_exception_handler(UploadOffsetMismatch, _handle_offset_mismatch)
     app.add_exception_handler(NotFound, _handle_not_found)
     app.add_exception_handler(ValidationFailed, _handle_unprocessable)
     app.add_exception_handler(PayloadTooLarge, _handle_payload_too_large)
@@ -62,6 +64,19 @@ async def _handle_conflict(request: Request, exc: Exception) -> JSONResponse:
             "detail": str(domain),
             "current": getattr(domain, "current", None),
             "target": getattr(domain, "target", None),
+        },
+    )
+
+
+async def _handle_offset_mismatch(request: Request, exc: Exception) -> JSONResponse:
+    # Resumable upload: tell the client exactly where to continue from.
+    mismatch = cast(UploadOffsetMismatch, exc)
+    return JSONResponse(
+        status_code=409,
+        content={
+            "detail": str(mismatch),
+            "expected_offset": mismatch.expected_offset,
+            "total": mismatch.total,
         },
     )
 
