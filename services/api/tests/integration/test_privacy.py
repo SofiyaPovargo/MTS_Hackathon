@@ -141,3 +141,71 @@ async def test_purge_keeps_fresh_audio(
     assert result["audio"] == 0
     async with session_factory() as session:
         assert await repositories.get_call_audio(session, call_id) is not None
+
+
+async def test_purge_deletes_legs_and_abandoned_resumable_chunks(
+    session_factory: SessionFactory,
+    seeded_users: dict[str, uuid.UUID],
+) -> None:
+    """Every object behind a recording goes: mixed stream, legs, in-flight chunks.
+
+    A resumable upload (``Content-Range``) stores each chunk as its own object
+    until the last one arrives; an upload the client never finished must not
+    leave those chunks in storage past the retention window.
+    """
+    anna_id = seeded_users["anna_id"]
+    storage = InMemoryStorage()
+    past = datetime(2020, 1, 1, tzinfo=UTC)
+    async with session_factory() as session:
+        call_id, mixed = await _call_with_data(
+            session, anna_id, storage, audio_expires_at=past
+        )
+        leg = f"calls/{call_id}/operator.wav"
+        chunk = f"calls/{call_id}/upload-1/part-00000"
+        audio = await repositories.get_call_audio(session, call_id)
+        assert audio is not None
+        audio.channel_urls = {"operator": await storage.put_bytes(leg, b"leg", "audio/wav")}
+        audio.pending_uploads = {
+            "mixed": {
+                "upload_id": "upload-1",
+                "offset": 5,
+                "total": 100,
+                "content_type": "audio/wav",
+                "parts": [{"key": chunk, "size": 5}],
+            }
+        }
+        await session.commit()
+
+    async with session_factory() as session:
+        result = await purge_expired_audio(session, storage=storage)
+        await session.commit()
+
+    assert result == {"audio": 1, "objects": 3}
+    for deleted in (mixed, leg, chunk):
+        with pytest.raises(StorageError):
+            await storage.get_bytes(deleted)
+
+
+async def test_purge_respects_batch_limit(
+    session_factory: SessionFactory,
+    seeded_users: dict[str, uuid.UUID],
+) -> None:
+    """One pass removes at most ``limit`` recordings; ``beat`` repeats."""
+    anna_id = seeded_users["anna_id"]
+    storage = InMemoryStorage()
+    past = datetime(2020, 1, 1, tzinfo=UTC)
+    async with session_factory() as session:
+        first, _ = await _call_with_data(session, anna_id, storage, audio_expires_at=past)
+        second, _ = await _call_with_data(session, anna_id, storage, audio_expires_at=past)
+
+    async with session_factory() as session:
+        result = await purge_expired_audio(session, storage=storage, limit=1)
+        await session.commit()
+    assert result["audio"] == 1
+
+    async with session_factory() as session:
+        remaining = [
+            (await repositories.get_call_audio(session, call_id)) is not None
+            for call_id in (first, second)
+        ]
+    assert remaining.count(True) == 1

@@ -56,6 +56,9 @@ class RecordingQueue:
     def enqueue_live_asr(self, call_id: str) -> None:
         return None
 
+    def enqueue_data_deletion(self, user_id: str) -> None:
+        return None
+
 
 async def _make_call(
     session: AsyncSession,
