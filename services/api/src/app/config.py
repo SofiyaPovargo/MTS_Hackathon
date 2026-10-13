@@ -62,6 +62,15 @@ class Settings(BaseSettings):
     reminders_provider: str = Field(default="local", alias="REMINDERS_PROVIDER")
     messaging_provider: str = Field(default="draft", alias="MESSAGING_PROVIDER")
 
+    # МТС Exolve (plan.md §11.1). Empty credentials keep the mock path usable.
+    exolve_api_base_url: str = Field(default="https://api.exolve.ru", alias="EXOLVE_API_BASE_URL")
+    exolve_api_key: str = Field(default="", alias="EXOLVE_API_KEY")
+    exolve_sip_resource_id: int = Field(default=0, alias="EXOLVE_SIP_RESOURCE_ID")
+    exolve_consent_notice_file_id: str = Field(default="", alias="EXOLVE_CONSENT_NOTICE_FILE_ID")
+    # Exolve has no server-side media stream: the mobile client uploads the SDK's
+    # mixed call audio to this ingest URL for the ML pipeline.
+    media_ingest_url: str = Field(default="ws://localhost:8000/api/ws/media", alias="MEDIA_INGEST_URL")
+
     # --- ML pipeline (optional, Stage 6 research) ---
     # T-one streaming ASR server (WebSocket). The compose `asr` service
     # (profile `ml`) serves it on http://localhost:8080; on the research Mac

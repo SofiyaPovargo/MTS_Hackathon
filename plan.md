@@ -600,22 +600,34 @@ Voice Provider
 
 ### 11.1. Voice‑провайдер: МТС Exolve (решение Этапа 1)
 
-Выбран **МТС Exolve**. Закрывает всё, что требует `VoiceProviderPort`:
+Выбран **МТС Exolve**. Соответствие `VoiceProviderPort` и API (сверено с
+docs.exolve.ru):
 
 | Возможность | API Exolve |
 |---|---|
-| Входящие, сценарий по URL (call control) | Numbering API + переадресация входящих на URL |
+| Входящие, сценарий по URL (call control) | переадресация входящих на URL: Exolve POST‑ит `{sip_id, numberA, call_sid}`, мы отвечаем JSON‑RPC с маршрутом на SIP ID пользователя |
 | Исходящие на обычные номера | Voice API / Callback API |
-| Запись разговора | Call Record API (`SetCallRecordState`, `Download`) |
-| События звонка (webhook) | Statistics API: Inbound/Outbound Call Events |
-| Аудио‑уведомление собеседнику | Media API (загрузка аудио) + инструкция воспроизведения |
-| DTMF (согласие 1/2) | сбор DTMF / Mobile SDK |
-| Мобильный клиент | Mobile SDK (Android, iOS, Flutter, React Native) |
+| Запись разговора | Call Record API: `POST /sip/v1/SetCallRecordState`, `POST /statistics/call-record/v1/GetInfo`, `GET /statistics/download/{uid}` |
+| События звонка (webhook) | Statistics API: Inbound Call Events — `type` `b` (Begin/A), `o` (Originate/B), `s` (Start/B ответил), `h`, `e` (End), `crr` (запись готова) |
+| Уведомление собеседнику (согласие) | `file_to_A` в ответе call control — проигрывается вызывающему |
+| Мобильный клиент | Mobile SDK (Android, iOS, Flutter) |
 | Транскрибация (альтернатива своему ASR) | Call Transcribation / Speech Analytics |
 
-Интеграция — адаптер за `VoiceProviderPort`; ML‑пайплайн и мобильный UI не
-меняются. Ключи/номера — только из `.env` (`EXOLVE_*`), в репозиторий не
-коммитятся. Реализация идёт после Этапов 4–5, в треке C.
+**Два решения по итогам сверки API (трек C):**
+
+1. **Аудио в ML‑пайплайн идёт от мобильного клиента.** У Exolve нет серверного
+   медиапотока (WebSocket/RTP нам не отдаётся), поэтому `open_media_stream()`
+   возвращает ingest‑URL (`MEDIA_INGEST_URL`), на который приложение льёт
+   смикшированный SDK‑поток. Пайплайн §12 не меняется — меняется только источник
+   `Media Stream`.
+2. **Согласие собеседника — `notice` + продолжение разговора.** Сбора DTMF в
+   inbound‑API Exolve нет, поэтому для Exolve `CONSENT_MODE=notice`: текст
+   уведомления проигрывается через `file_to_A`, факт согласия пишется в
+   `consents`. Режим `dtmf` остаётся для провайдеров, которые его поддерживают.
+
+Интеграция — адаптер за `VoiceProviderPort` (`integrations/exolve.py`); ML‑пайплайн
+и мобильный UI не меняются. Ключи/номера — только из `.env` (`EXOLVE_*`), в
+репозиторий не коммитятся.
 
 ## 12. ИИ‑пайплайн
 

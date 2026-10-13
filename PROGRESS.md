@@ -17,8 +17,8 @@
 | 1. Подготовка | ✅ | MVP-сценарий, роли, стек Flutter, репо, структура; **voice-провайдер выбран: МТС Exolve** (§11.1) | — |
 | 2. Серверная основа | ✅ | Postgres/Redis/MinIO, модели, auth+роли, CRUD, docker compose, миграции; 69 тестов | — |
 | 3. Мобильная основа | ⬜ | Flutter SDK установлен (3.47.7/Dart 3.13.5), план файлов готов | `apps/mobile` не создан: auth, контакты, SQLite+sync, доска, Repository |
-| 4. Звонки | 🔶 | `VoiceProviderPort` (mock) + webhook-маршруты в backend; state machine | реальный провайдер (блокер), VoIP SDK, экран звонка, исходящие |
-| 5. Consent flow | 🔶 | backend-логика целиком: `consent.py`, `call_session.py`, state machine, тесты notice/DTMF/refusal/withdraw | аудио-уведомление собеседнику (play_notice), DTMF через провайдера, мобильные экраны |
+| 4. Звонки | 🔶 | `VoiceProviderPort` (mock) + webhook-маршруты в backend; **адаптер МТС Exolve** `integrations/exolve.py` (события, call-control, Call Record API); state machine | webhook-маршруты call-control/событий Exolve, VoIP SDK, экран звонка, исходящие |
+| 5. Consent flow | 🔶 | backend-логика целиком: `consent.py`, `call_session.py`, state machine, тесты notice/DTMF/refusal/withdraw; адаптер: notice через `file_to_A` (Exolve) | маршрут call-control, связка end-to-end, мобильные экраны; у Exolve нет сбора DTMF — режим `notice` (§11.1) |
 | 6. Запись и анализ | 🔶 | research-слой `src/app/ml`: T-one ASR-клиент, pyannote-диаризация, STT-пайплайн (roles, resample); S3-хранилище; Celery-воркеры (заглушки); **WS-эндпоинт `/api/ws/calls/{id}`** (JWT, replay+live, версия схемы 1) | VAD/чанкинг, worker-asr/ai задачи, LLM-извлечение, транскрипты в БД, эмиссия `partial_transcript`/`agreement_detected` |
 | 7. Договорённости и задачи | 🔶 | backend: agreement-статусы, confirm→task, PATCH-guards, audit; тесты | live-карточка (UI), напоминания, привязка к звонку в UI |
 | 8. Доски | 🔶 | backend: `/me/tasks`, `/manager/team/tasks|stats|members`, роли+team, тесты доступа | мобильные доски (личная и менеджерская), фильтры/сортировка, аналитика UI |
@@ -71,8 +71,9 @@
 - `security.py` — JWT HS256
 
 ### integrations/ — внешние порты
-- `voice.py` — **VoiceProviderPort (mock)**; webhook-signature `VOICE_WEBHOOK_SECRET`
-- `outbound.py` — черновик сообщения клиенту (не отправляется автоматически — правило!)
+- `voice.py` — `VoiceProviderPort`, `MockVoiceProvider`, `voice_provider_factory` (`mock`/`exolve`); webhook-signature `VOICE_WEBHOOK_SECRET`
+- `exolve.py` — адаптер МТС Exolve: парсинг событий (`b/o/s/e/h/crr` → `CallEvent`), тело call-control (маршрут на SIP ID + `file_to_A`), Call Record API (`SetCallRecordState`/`GetInfo`/`Download`); `open_media_stream` → `MEDIA_INGEST_URL` (аудио льёт клиент), `collect_dtmf` → `None` (`CONSENT_MODE=notice`) — см. plan.md §11.1
+- `outbound.py` — календарь/напоминания/черновик клиенту (не отправляется автоматически — правило!); фабрики портов
 
 ### ml/ — research-слой (Этап 6 groundwork, уже в проде-структуре)
 - `asr/` — `ASRPort`, `ToneASRClient` (WS /api/ws, 8 кГц int16, chunking)
@@ -132,11 +133,11 @@
 
 | Группа | Файлы | Что покрывают |
 |---|---|---|
-| unit (3) | test_dates, test_rules, test_state_machine | относительные даты, пороги, переходы звонка |
+| unit (4) | test_dates, test_rules, test_state_machine, test_exolve | относительные даты, пороги, переходы звонка, Exolve (события, тело маршрута, Call Record API, порт) |
 | integration (8) | test_auth, test_access, test_call_consent, test_agreements_tasks, test_schedule, test_sync, test_manager, test_ws_events | OTP/refresh, права ролей+команды, запись без consent, confirm→task, календарь/напоминания/черновик (только confirmed), sync-идемпотентность, WS auth/ownership/replay/live |
 | ml (2) | test_tone_client, test_pipeline | протокол T-one, слияние ролей/ресамплинг |
 
-**Итого: 89 passed** (unit 38 + integration 46 + ml 5). Интеграционные требуют
+**Итого: 105 passed** (unit 54 + integration 46 + ml 5). Интеграционные требуют
 `docker compose up -d postgres redis` (отдельная БД `agreements_test`).
 
 ---
@@ -164,9 +165,11 @@ curl -k https://localhost/api/healthz   # живо (nginx TLS)
 
 | Блокер | Влияние |
 |---|---|
-| ~~Выбор voice-провайдера~~ **МТС Exolve** (решено 2026-10-13, `plan.md` §11.1) | снят; Этап 4 — за адаптером провайдера |
+| ~~Выбор voice-провайдера~~ **МТС Exolve** (решено 2026-10-13, `plan.md` §11.1) | снят; Этап 4 — за webhook-маршрутами и VoIP SDK |
+| ~~Формат WS-событий~~ версия 1 + `GET /api/ws/events/schema` (трек C) | снят; мобильные/ML эмитят по контракту |
+| **Аудио в ML — от мобильного клиента** (`MEDIA_INGEST_URL`): у Exolve нет серверного медиапотока (решено 2026-10-13, §11.1) | Этап 6: нужен ingest-эндпоинт (backend) + загрузка SDK-потока (трек A) |
+| У Exolve нет сбора DTMF → `CONSENT_MODE=notice` (§11.1) | Этап 5: для Exolve только notice; `dtmf` — за другими провайдерами |
 | Выбор LLM (самохостинг предпочтителен) | Этап 6, LLM-часть |
-| Формат WS-событий | мобильная live-карточка (Этап 7) и эмиссия ML |
 
 ## История (для контекста)
 

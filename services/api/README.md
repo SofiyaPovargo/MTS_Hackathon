@@ -16,7 +16,7 @@ src/app/
   domain/         entities, enums, state machine, date/commitment rules (no IO)
   services/       auth, call session, consent, agreement, task, schedule, sync, manager, events
   infrastructure/ SQLAlchemy models/repositories, Redis cache, JWT, S3 storage
-  integrations/   external ports: VoiceProviderPort (mock), calendar/reminders/messaging
+  integrations/   external ports: VoiceProviderPort (mock + Exolve adapter), calendar/reminders/messaging
   ml/             research layer: ASR (T-one client), diarization (pyannote), STT pipeline
   migrations/     Alembic migrations
   worker.py       Celery entrypoint (queues: asr, ai, notifications)
@@ -82,8 +82,13 @@ All settings come from the environment (`.env`, see `.env.example`). Key ones:
 | `DEV_OTP`             | —                    | fixed OTP accepted only in local/dev      |
 | `CONFIDENCE_THRESHOLD`| 0.8                  | below it an agreement is `requires_review`|
 | `CONSENT_MODE`        | notice               | `notice` \| `dtmf` \| `sms_link`          |
-| `VOICE_PROVIDER`      | mock                 | `mock` (real adapter added per provider)  |
+| `VOICE_PROVIDER`      | mock                 | `mock` \| `exolve` (МТС Exolve adapter)   |
 | `VOICE_WEBHOOK_SECRET`| dev-voice-secret     | header checked on call webhooks           |
+| `EXOLVE_API_BASE_URL` | `https://api.exolve.ru` | Exolve API base                        |
+| `EXOLVE_API_KEY`      | —                    | Exolve application API key (Bearer)       |
+| `EXOLVE_SIP_RESOURCE_ID` | 0                 | SIP resource id used by `SetCallRecordState` |
+| `EXOLVE_CONSENT_NOTICE_FILE_ID` | —          | audio notice played to the caller (`file_to_A`) |
+| `MEDIA_INGEST_URL`    | `ws://…/api/ws/media` | where the client uploads the mixed call audio |
 | `CALENDAR_PROVIDER`   | ics                  | `ics` (in-app artifact)                   |
 | `REMINDERS_PROVIDER`  | local                | `local`                                   |
 | `MESSAGING_PROVIDER`  | draft                | `draft` (never sends)                     |
@@ -221,10 +226,22 @@ Agreement statuses: `detected`, `requires_review`, `needs_clarification`,
 Modes are switched via `CONSENT_MODE`; the integration tests exercise
 notice, DTMF refusal and withdrawal.
 
+**МТС Exolve adapter** (`integrations/exolve.py`, `VOICE_PROVIDER=exolve`). The
+inbound API has no DTMF collection and exposes no server-side media stream, so
+for Exolve consent is `notice` (played to the caller via `file_to_A` in the
+call-control response) and the ML audio comes from the mobile client, which
+uploads the SDK's mixed stream to `MEDIA_INGEST_URL` (`open_media_stream()`
+returns that URL). The adapter maps Exolve progress notifications (`b/o/s/e`)
+to `CallEvent` and wraps the Call Record API (`SetCallRecordState`, `GetInfo`,
+`Download`). Decisions recorded in `plan.md` §11.1.
+
 ## ML pipeline (research, Stage 6 groundwork)
 
 Streaming ASR (T-one, Russian telephony 8 kHz) + speaker diarization
 (pyannote) + transcript with `operator`/`client` roles.
+
+The audio stream arrives from the mobile client (`MEDIA_INGEST_URL`), not from
+the voice provider — see §11.1 of `plan.md`.
 
 ```
 src/app/ml/
@@ -319,13 +336,15 @@ relative date resolution, confidence threshold, manager/user access rights,
 sync idempotency, OTP login + refresh rotation + logout, consent notice/DTMF
 /withdrawal, agreement confirm→task, PATCH guards, cross-team 403s, the
 T-one ASR client protocol, the STT speaker/role merge, the WebSocket event
-stream (auth, ownership, replay, live delivery), and the confirmed-only
-calendar/reminder/draft side effects (future-only reminders, draft never sent).
+stream (auth, ownership, replay, live delivery), the confirmed-only
+calendar/reminder/draft side effects (future-only reminders, draft never sent),
+and the МТС Exolve adapter (event mapping, routing body, Call Record API,
+notice/DTMF behaviour).
 
 ## Roadmap
 
 Stage order follows `plan.md`: this is Stage 2 (plus research ML groundwork and
 the Track C voice/integration increments). Staged placeholders: wiring the ML
 pipeline into the workers (Stage 6), real third-party calendar/reminder
-adapters, the MTS Exolve voice adapter (plan.md §11.1), and the mobile app
-(Stage 3+).
+adapters, the Exolve call-control/event webhook routes and end-to-end call
+wiring (`plan.md` §11.1), and the mobile app (Stage 3+).

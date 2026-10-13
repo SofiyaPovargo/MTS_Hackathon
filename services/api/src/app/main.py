@@ -36,7 +36,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     app.state.engine = engine
     app.state.session_factory = factory
     app.state.cache = cache
-    app.state.voice_provider = voice_provider_factory(settings.voice_provider)
+    app.state.voice_provider = voice_provider_factory(settings.voice_provider, settings)
     app.state.event_hub = EventHub(cache)
     app.state.calendar = calendar_factory(settings.calendar_provider)
     app.state.reminders = reminders_factory(settings.reminders_provider)
@@ -52,6 +52,9 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
 
     yield
 
+    aclose = getattr(app.state.voice_provider, "aclose", None)
+    if aclose is not None:
+        await aclose()
     await cache.close()
     await engine.dispose()
 

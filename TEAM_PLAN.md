@@ -100,9 +100,16 @@ pytest 74 passed), ML-исследование (ASR T-one + диаризация
 1. **Voice-провайдер** (блокирует Этап 4 целиком — и backend, и мобильный):
    - [x] Сравнить кандидатов (Exolve, Mango Office, Voximplant, Zadarma/Novofon)
    - [x] Выбор зафиксирован в `plan.md` §11.1: **МТС Exolve**
-   - [ ] Реальный адаптер `VoiceProviderPort` (Exolve) + мок для тестов/демо
+   - [x] Реальный адаптер `VoiceProviderPort` (Exolve) + мок для тестов/демо:
+     `integrations/exolve.py` — события (`b/o/s/e/h/crr`→`CallEvent`), тело
+     call-control (маршрут на SIP ID + `file_to_A`), Call Record API
+     (`SetCallRecordState`/`GetInfo`/`Download`); мок остаётся для тестов/демо
+   - [ ] Webhook-маршруты Exolve (call-control + события) и end-to-end связка
 2. **Consent-уведомление** (нужно Этапу 5): `play_notice` через провайдера,
    DTMF 1/2, запись события в `consents`
+   - [x] Адаптер Exolve: notice через `file_to_A` в ответе call-control
+   - [ ] Подключить к consent-flow; у Exolve нет сбора DTMF → режим `notice`
+     (`plan.md` §11.1), `dtmf` — за другими провайдерами
 3. **WebSocket-эндпоинт** (нужен и мобильному, и ML):
    - [x] `/api/ws/calls/{id}` с JWT-аутентификацией (header или `?token=`),
      владелец звонка; версия в схеме событий (`version: 1`) + `GET /api/ws/events/schema`
@@ -203,9 +210,11 @@ plan.md), потом писать код. Общие файлы менять т�
 | Решение | Кто | Срок | Блокирует |
 |---|---|---|---|
 | ~~Выбор voice-провайдера~~ **МТС Exolve** | Mav | ✅ решено | снят |
+| **Аудио в ML — от мобильного клиента** (`MEDIA_INGEST_URL`; у Exolve нет серверного медиапотока) | согласовано Mav/A/B | ✅ решено 2026-10-13 | Этап 6: ingest-эндпоинт (C) + загрузка SDK-потока (A) |
+| Consent для Exolve — только `notice` (нет сбора DTMF) | Mav | ✅ решено 2026-10-13 (`plan.md` §11.1) | Этап 5 у Exolve — notice |
 | Выбор LLM (самохостинг?) | Sofiya + согласование | до LLM-части | B |
 | Деплой-таргет (VPS) | Mav | ближе к демо | — (не блокер) |
-| Формат WS-событий (схема) | C (Mav), ревью B и A | до Этапа 7 UI | A: 7, B: эмиссия |
+| ~~Формат WS-событий (схема)~~ версия 1 + `GET /api/ws/events/schema` | C (Mav) | ✅ решено | снят |
 
 ---
 

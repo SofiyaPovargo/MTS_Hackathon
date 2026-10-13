@@ -8,6 +8,9 @@ from __future__ import annotations
 
 from typing import Protocol
 
+from app.config import Settings
+from app.integrations.exolve import ExolveVoiceProvider
+
 
 class VoiceProviderPort(Protocol):
     """Interface of the Voice Provider (Twilio-like adapter in production)."""
@@ -64,7 +67,9 @@ class MockVoiceProvider:
         return f"stream-{call_external_id}"
 
 
-def voice_provider_factory(name: str) -> VoiceProviderPort:
+def voice_provider_factory(name: str, settings: Settings) -> VoiceProviderPort:
     if name == "mock":
         return MockVoiceProvider()
+    if name == "exolve":
+        return ExolveVoiceProvider(settings)
     raise ValueError(f"unknown voice provider: {name}")
