@@ -46,11 +46,14 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         NullAnalysisQueue() if settings.env == "test" else CeleryAnalysisQueue(settings)
     )
 
-    if settings.env != "test":
-        try:
-            from app.infrastructure.storage import MinioStorage
+    from app.infrastructure.storage import InMemoryStorage, MinioStorage
 
-            await MinioStorage(settings).create_bucket()
+    if settings.env == "test":
+        app.state.storage = InMemoryStorage()
+    else:
+        app.state.storage = MinioStorage(settings)
+        try:
+            await app.state.storage.create_bucket()
         except Exception as exc:  # pragma: no cover - infra can be down in dev
             logger.warning("object storage bucket unavailable: %s", exc)
 

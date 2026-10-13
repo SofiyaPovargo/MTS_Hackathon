@@ -6,8 +6,10 @@
 **Этап 6, backend-часть ML-пайплайна, слит в
 `development`** (PR #5): роли из каналов VoIP, воркеры `process_asr`/
 `run_llm_extraction`, триггер `POST /calls/{id}/analyze`; гейты ruff ✓, mypy ✓,
-**pytest 135 passed**. Команда: **Sofiya** (ML), **Mav** (backend), **Xivalor**
-(mobile). Актуальное состояние по каждому этапу — в `PROGRESS.md`.
+pytest 135 passed. **Трек C (Mav): добавлен приём аудио от клиента**
+`POST /calls/{id}/audio` → MinIO → `call_audio` → авто-ASR (144 passed).
+Команда: **Sofiya** (ML), **Mav** (backend), **Xivalor** (mobile). Актуальное
+состояние по каждому этапу — в `PROGRESS.md`.
 
 **Обновление 2026-10-13:** команда работает **локально** — у каждого свой стек и
 своя БД (общая/удалённая БД не используем). **Sofia делает свою часть (трек B)
@@ -40,7 +42,7 @@
 - [ ] **Этап 9**: резюме разговора, черновик клиенту, календарь/`.ics`
 
 ### Mav — backend и интеграции (Трек C)
-- [ ] **Приём аудио от клиента** (критический путь): ingest-эндпоинт (`MEDIA_INGEST_URL`) → MinIO → очередь `process_asr`
+- [x] **Приём аудио от клиента** (критический путь): `POST /calls/{id}/audio` → MinIO → `call_audio` → очередь `process_asr` (202; отказ 409 без записи/согласия, mixed или per-leg `?leg=`)
 - [ ] **Exolve `crr`** → скачать запись (Call Record API) → MinIO → авто-постановка ASR
 - [ ] **Exolve webhooks** (call-control + statistics `b/o/s/h/e/crr`) end-to-end
 - [ ] **Consent-уведомление** в бою (`file_to_A`, режим `notice`) + запись в `consents`
@@ -147,7 +149,8 @@ wav (research уже умеет их синтезировать) — мобил�
 - [x] **Триггер**: `POST /calls/{id}/analyze` (owner-only, 202, только для записанного звонка)
 - [x] Тесты: роли каналов, `extract_pair`, сквозной пайплайн (идемпотентность)
 - [ ] **Конфиденциальность**: шифрование аудио/транскриптов, redaction логов LLM
-- [ ] **Приём аудио**: ingest-эндпоинт (`MEDIA_INGEST_URL`) + авто-триггер по Exolve `crr`
+- [x] **Приём аудио**: `POST /calls/{id}/audio` (raw `audio/*`, `?leg=`, размер, приватность) → MinIO → `call_audio` → авто-постановка `process_asr`; отказ без записи/согласия
+- [ ] Авто-триггер по Exolve `crr` (скачать запись Call Record API в MinIO)
 - **Готово, когда**: `docker compose up -d` + аудио звонка → в БД транскрипт, в Redis
   события для WebSocket, на доске — договорённость.
 - **Замечание**: отдельного шага VAD нет — чанкинг делает T-one-клиент; live-стриминг

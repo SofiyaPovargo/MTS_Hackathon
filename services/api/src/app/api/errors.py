@@ -18,6 +18,7 @@ from app.domain.errors import (
     DomainError,
     InvalidStateTransition,
     NotFound,
+    PayloadTooLarge,
     PermissionDenied,
     ValidationFailed,
 )
@@ -35,6 +36,7 @@ def register_exception_handlers(app: FastAPI) -> None:
     app.add_exception_handler(Conflict, _handle_conflict)
     app.add_exception_handler(NotFound, _handle_not_found)
     app.add_exception_handler(ValidationFailed, _handle_unprocessable)
+    app.add_exception_handler(PayloadTooLarge, _handle_payload_too_large)
     app.add_exception_handler(StorageError, _handle_service_unavailable)
 
 
@@ -70,6 +72,10 @@ async def _handle_not_found(request: Request, exc: Exception) -> JSONResponse:
 
 async def _handle_unprocessable(request: Request, exc: Exception) -> JSONResponse:
     return JSONResponse(status_code=422, content={"detail": str(exc)})
+
+
+async def _handle_payload_too_large(request: Request, exc: Exception) -> JSONResponse:
+    return JSONResponse(status_code=413, content={"detail": str(exc)})
 
 
 async def _handle_service_unavailable(request: Request, exc: Exception) -> JSONResponse:

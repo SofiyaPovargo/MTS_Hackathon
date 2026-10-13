@@ -22,7 +22,7 @@ ML-исследование слито. **ML-пайплайн
 | 3. Мобильная основа | ✅ | `apps/mobile` (Flutter): слои UI/App/Domain/Infra, OTP-auth + refresh, контакты за портом, личная доска, SQLite (tasks/agreements/outbox/sync_state/session), Repository + sync (pull→apply→push→ack→token), `--dart-define=API_BASE_URL`; analyze ✓ | сборка/прогон на эмуляторе (нет Android SDK/Xcode в среде) — см. ограничение |
 | 4. Звонки | 🔶 | backend: `VoiceProviderPort` (mock) + webhook-маршруты + state machine; **mobile (Dart)**: `VoiceCallProvider` за DI + `CallApi`, `CallController` (набор/ответ/отбой/mute), экран звонка (оверлей: таймер, mute, входящий), дозвон из контактов/доски, `MockVoiceCallProvider`, зеркало стейт-машины; analyze ✓, **53 теста** | нативный адаптер (CallKit/Telecom/Exolve SDK) и реальные входящие VoIP — нужна машина с Android SDK/Xcode; реальный провайдер (блокер) |
 | 5. Consent flow | 🔶 | backend-логика целиком: `consent.py`, `call_session.py`, state machine, тесты notice/DTMF/refusal/withdraw | аудио-уведомление собеседнику (play_notice), DTMF через провайдера, мобильные экраны |
-| 6. Запись и анализ | 🔶 | **прод-пайплайн** (`ml/pipeline.py`): декодер + роли из каналов VoIP / диаризация для mono-PSTN (`ml/stt`), транскрипт в `transcripts` (JSONB-сегменты, `role_source`), LLM+Instructor + валидация (`ml/extraction`), реальные воркеры `process_asr`/`run_llm_extraction`, эмиссия `partial_transcript`/`agreement_detected`, триггер `POST /calls/{id}/analyze`, идемпотентность по `call_id` | приём аудио от клиента (`MEDIA_INGEST_URL` — эндпоинта нет), авто-триггер по Exolve `crr` (скачивание записи в MinIO), live-стриминг (сейчас batch по файлу), шифрование/redaction |
+| 6. Запись и анализ | 🔶 | **прод-пайплайн** (`ml/pipeline.py`): декодер + роли из каналов VoIP / диаризация для mono-PSTN (`ml/stt`), транскрипт в `transcripts` (JSONB-сегменты, `role_source`), LLM+Instructor + валидация (`ml/extraction`), реальные воркеры `process_asr`/`run_llm_extraction`, эмиссия `partial_transcript`/`agreement_detected`, **приём аудио от клиента** `POST /calls/{id}/audio` (raw `audio/*`, mixed или `?leg=`, MinIO + `call_audio`, авто-постановка ASR, только после записи/согласия), триггер `POST /calls/{id}/analyze`, идемпотентность по `call_id` | авто-триггер по Exolve `crr` (скачивание записи в MinIO), live-стриминг (сейчас batch по файлу), шифрование/redaction |
 | 7. Договорённости и задачи | 🔶 | backend: agreement-статусы, confirm→task, PATCH-guards, audit; тесты | live-карточка (UI), напоминания, привязка к звонку в UI |
 | 8. Доски | 🔶 | backend: `/me/tasks`, `/manager/team/tasks|stats|members`, роли+team, тесты доступа | мобильные доски (личная и менеджерская), фильтры/сортировка, аналитика UI |
 | 9. Итог и календарь | 🔶 | backend: `schedule.py` — календарное событие/`.ics`/напоминания/черновик клиенту, только для confirmed-задач, тесты | резюме разговора, UI календаря/напоминаний, реальные адаптеры |
@@ -33,7 +33,8 @@ ML-исследование слито. **ML-пайплайн
 ## Backend — карта модулей (services/api/src/app)
 
 ### api/ — HTTP-слой (полный, из Этапа 2)
-- `routes.py` — все эндпоинты: `/auth/*`, `/me*`, `/calls*` (+ `POST /calls/{id}/analyze`
+- `routes.py` — все эндпоинты: `/auth/*`, `/me*`, `/calls*` (+ `POST /calls/{id}/audio`
+  — загрузка записи клиентом, 202; + `POST /calls/{id}/analyze`
   — постановка ASR/LLM в очередь, 202), `/agreements*`, `/tasks*`,
   `/manager/team/*`, `/sync` GET/POST, `/healthz`
 - `ws.py` — WebSocket `/ws/calls/{id}` (JWT, owner-only, replay+live, схема v1)
@@ -69,6 +70,9 @@ ML-исследование слито. **ML-пайплайн
   версия схемы 1, дедуп на стыке; типы: `partial_transcript | agreement_detected | analysis_started | call_ended`
 - `jobs.py` — `AnalysisQueuePort` + `CeleryAnalysisQueue` / `NullAnalysisQueue`;
   постановка ASR в очередь (триггер анализа)
+- `audio_ingest.py` — приём записи от клиента: валидация типа/размера (413/422),
+  MinIO (SSE + retention), заполнение `call_audio` (mixed или ноги), удаление
+  вытесненных объектов, авто-постановка ASR; отказ без `recording_started_at`
 
 ### infrastructure/
 - `db/` — SQLAlchemy async: models, repositories, session; `migrations/` (Alembic,

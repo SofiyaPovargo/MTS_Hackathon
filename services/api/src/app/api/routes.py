@@ -38,6 +38,7 @@ from app.infrastructure.cache import Cache
 from app.infrastructure.db import repositories
 from app.infrastructure.db.models import User
 from app.services.agreement import AgreementService
+from app.services.audio_ingest import AudioIngestService, AudioUpload
 from app.services.auth import AuthService
 from app.services.call_session import CallSessionService, get_call_or_404
 from app.services.consent import ConsentService
@@ -217,6 +218,71 @@ async def analyze_call(
         raise Conflict("call was not recorded")
     request.app.state.analysis_queue.enqueue_asr(str(call.id))
     return schemas.CallAnalyzeResponse(call_id=call.id, status="queued")
+
+
+@router.post(
+    "/calls/{call_id}/audio",
+    response_model=schemas.CallAudioAccepted,
+    status_code=202,
+    # The body is the raw recording (binary), so it is not a Pydantic model.
+    # Declare it explicitly: the generated API client sends the bytes as-is and
+    # nothing is spooled to the container filesystem.
+    openapi_extra={
+        "requestBody": {
+            "required": True,
+            "content": {
+                "audio/wav": {"schema": {"type": "string", "format": "binary"}},
+                "audio/ogg": {"schema": {"type": "string", "format": "binary"}},
+                "audio/opus": {"schema": {"type": "string", "format": "binary"}},
+                "audio/mpeg": {"schema": {"type": "string", "format": "binary"}},
+                "application/octet-stream": {"schema": {"type": "string", "format": "binary"}},
+            },
+        }
+    },
+)
+async def upload_call_audio(
+    call_id: uuid.UUID,
+    request: Request,
+    leg: str | None = Query(default=None, pattern="^(operator|client)$"),
+    duration_sec: int | None = Query(default=None, ge=0),
+    user: User = Depends(get_current_user),
+    session: AsyncSession = Depends(get_session),
+) -> schemas.CallAudioAccepted:
+    """Upload the recorded audio of a call; ASR is queued once it is complete.
+
+    The mobile client POSTs the raw audio as the request body (``Content-Type:
+    audio/*``). Without ``?leg`` it is the mixed stream; with ``?leg=operator``
+    or ``?leg=client`` it is one per-leg track — upload both for channel
+    separation. Refused unless the call was recorded (``answered`` + consent);
+    an oversized body is 413, an unsupported type is 422, a foreign call is 403.
+    """
+    call = await get_call_or_404(session, call_id)
+    await _require_call_owner(user, call.user_id)
+
+    service = AudioIngestService(
+        session,
+        storage=request.app.state.storage,
+        analysis=request.app.state.analysis_queue,
+        settings=request.app.state.settings,
+    )
+    service.check_declared_size(request.headers.get("content-length"))
+    body = await request.body()
+    audio, queued = await service.ingest(
+        user,
+        call,
+        upload=AudioUpload(body, request.headers.get("content-type")),
+        role=leg,
+        duration_sec=duration_sec,
+    )
+    await session.commit()
+    return schemas.CallAudioAccepted(
+        call_id=call.id,
+        role=leg,
+        content_type=audio.content_type,
+        bytes_stored=len(body),
+        legs_present=sorted((audio.channel_urls or {}).keys()),
+        analysis_queued=queued,
+    )
 
 
 # ---- agreements ---------------------------------------------------------------

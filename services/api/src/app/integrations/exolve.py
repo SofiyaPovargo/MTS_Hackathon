@@ -224,8 +224,10 @@ class ExolveVoiceProvider:
 
     async def open_media_stream(self, call_external_id: str) -> str:
         # No server-side media stream: the mobile client uploads the SDK's mixed
-        # stream to this ingest URL.
-        return f"{self._settings.media_ingest_url}?call_external_id={call_external_id}"
+        # stream to ``POST {ingest}/calls/{call_id}/audio`` once the call ends.
+        # The client already knows its own call id, so only the base is returned.
+        del call_external_id
+        return self._settings.media_ingest_url
 
     def control_response(
         self,

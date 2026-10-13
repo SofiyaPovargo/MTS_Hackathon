@@ -164,13 +164,13 @@ async def test_collect_dtmf_is_unsupported() -> None:
 
 
 async def test_open_media_stream_returns_client_ingest_url() -> None:
-    provider = ExolveVoiceProvider(_settings(media_ingest_url="ws://ingest.local/ws/media"))
+    provider = ExolveVoiceProvider(_settings(media_ingest_url="http://ingest.local/api"))
     try:
         url = await provider.open_media_stream("call-9")
     finally:
         await provider.aclose()
 
-    assert url == "ws://ingest.local/ws/media?call_external_id=call-9"
+    assert url == "http://ingest.local/api"
 
 
 async def test_control_response_applies_notice_then_falls_back() -> None:

@@ -617,9 +617,9 @@ docs.exolve.ru):
 
 1. **Аудио в ML‑пайплайн идёт от мобильного клиента.** У Exolve нет серверного
    медиапотока (WebSocket/RTP нам не отдаётся), поэтому `open_media_stream()`
-   возвращает ingest‑URL (`MEDIA_INGEST_URL`), на который приложение льёт
-   смикшированный SDK‑поток. Пайплайн §12 не меняется — меняется только источник
-   `Media Stream`.
+   возвращает базу ingest‑URL (`MEDIA_INGEST_URL`), а приложение загружает
+   смикшированный SDK‑поток на `POST {MEDIA_INGEST_URL}/calls/{call_id}/audio`
+   (§13). Пайплайн §12 не меняется — меняется только источник `Media Stream`.
 2. **Согласие собеседника — `notice` + продолжение разговора.** Сбора DTMF в
    inbound‑API Exolve нет, поэтому для Exolve `CONSENT_MODE=notice`: текст
    уведомления проигрывается через `file_to_A`, факт согласия пишется в
@@ -694,6 +694,21 @@ POST /calls
   "contact_id": "CNT-12",
   "record_consent": true
 }
+```
+
+### Приём аудио звонка (клиент → сервер)
+
+Voice‑провайдер (МТС Exolve) не отдаёт серверный медиапоток, поэтому запись
+загружает мобильный клиент (§11.1). Загрузка возможна только после `answered` и
+согласия: без `recording_started_at` запрос отклоняется (409), чужой звонок —
+403. Тело — сырое аудио (`Content-Type: audio/*`), лимит
+`MAX_AUDIO_UPLOAD_MB` (413), срок хранения — `AUDIO_RETENTION_DAYS`. После
+загрузки аудио кладётся в MinIO, заполняется `call_audio` и ставится ASR.
+
+```http
+POST /calls/{call_id}/audio                  # смешанный поток (по умолчанию)
+POST /calls/{call_id}/audio?leg=operator     # одна нога VoIP (?leg=client — вторая)
+     &duration_sec=123
 ```
 
 ### Синхронизация
