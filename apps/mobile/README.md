@@ -4,16 +4,18 @@
 запись и анализ разговора, карточки договорённостей, задачи, личная и
 менеджерская доски. Одна кодовая база для Android и iOS (`plan.md`, `AGENTS.md`).
 
-Текущий объём — **Этапы 3–5, 7**: мобильная основа (авторизация, контакты,
+Текущий объём — **Этапы 3–5, 7, 8**: мобильная основа (авторизация, контакты,
 личная доска, SQLite-кэш, Repository и синхронизация), **звонки на Dart-уровне**
 (порт `VoiceCallProvider` за DI, `CallController`, экран звонка, зеркало
 стейт-машины, mock-провайдер), **consent-flow** (экран согласия на первом
 входе, настройки записи/ИИ: toggle, отзыв, удаление данных, политика;
-блокировка записи без согласия; отказ собеседника) и **live-карточка
+блокировка записи без согласия; отказ собеседника), **live-карточка
 договорённостей по WebSocket** (транскрипт, карточки договорённостей,
-confirm/reject/edit, ручной ввод без согласия, задача из `confirmed`).
-Нативный VoIP-адаптер, загрузка аудио на `MEDIA_INGEST_URL` и напоминания —
-следующие шаги (см. `TEAM_PLAN.md`).
+confirm/reject/edit, ручной ввод без согласия, задача из `confirmed`) и
+**доски** (личная с секциями и действиями по задачам через outbox; доска
+менеджера с фильтрами, аналитикой и составом команды).
+Нативный VoIP-адаптер, загрузка аудио на `MEDIA_INGEST_URL`, итог звонка и
+календарь/удаление — следующие шаги (см. `TEAM_PLAN.md`).
 
 ## Слои (чистая архитектура)
 
@@ -23,32 +25,39 @@ lib/
   core/config.dart          конфиг; API base URL из --dart-define, не хардкод
   domain/                   сущности и правила, без Flutter/плагинов
     enums.dart              wire-enums (должны совпадать с backend)
-    models.dart             UserProfile, AuthSession, TaskItem, Agreement, Call, ContactItem, ConsentRecord
+    models.dart             UserProfile, AuthSession, TaskItem, Agreement, Call, ContactItem, ConsentRecord, TeamMember/TeamStats, TaskPatch
+    board.dart              чистые правила досок (секции/сортировка/фильтры)
     call.dart               CallSignal/CallState + зеркало стейт-машины звонка
     consent.dart            AppConsent (решение пользователя; кэш + статус синка)
     ws_event.dart           конверт WS-событий (v1) + TranscriptSegment
     sync_models.dart        SyncChange/Pull/Operation/Result (контракт /sync)
-    ports.dart              интерфейсы (AuthApi, SessionStore, BoardApi, SyncApi,
-                            CallApi, ConsentApi, ConsentStore, VoiceCallProvider,
-                            CallEventsPort, AgreementApi, ContactsSource,
-                            LocalBoardStore, OutboxStore, SyncStateStore)
+    ports.dart              интерфейсы (AuthApi, SessionStore, BoardApi, ManagerApi,
+                            SyncApi, CallApi, ConsentApi, ConsentStore,
+                            VoiceCallProvider, CallEventsPort, AgreementApi,
+                            ContactsSource, LocalBoardStore, OutboxStore,
+                            SyncStateStore)
   application/              контроллеры Riverpod + провайдеры (wiring)
     call_controller.dart    сессия звонка (набор/ответ/отбой/mute, сигналы провайдера,
                             consent-статусы: notice/result, отказ собеседника),
                             live-лента WS (транскрипт/договорённости), действия
                             по договорённостям (confirm/reject/edit/ручной ввод)
     consent_controller.dart решение пользователя (local-first + write-through на сервер)
+    board_controller.dart   личная доска + действия по задачам (outbox + sync)
+    manager_controller.dart доска менеджера (задачи/аналитика/команда, фильтры)
   infrastructure/           реализации портов
-    api/                    dio-клиент (bearer, refresh-on-401), auth/board/sync/call/consent/agreement API
+    api/                    dio-клиент (bearer, refresh-on-401), auth/board/sync/call/consent/agreement/manager API
     db/                     sqflite: схема (v2), session, outbox, sync_state, доска, app_settings
     repositories/           контакты устройства за портом
     sync/sync_engine.dart   цикл синхронизации
     voice/                  mock voice-провайдер (реальный SDK — за тем же портом)
     ws/ws_call_events.dart  WS-клиент live-ленты (конверт v1 → CallEvent)
   ui/                       экраны и виджеты (никакой бизнес-логики)
-    formats.dart                 пользовательские подписи (статусы/владелец/уверенность)
+    formats.dart                 пользовательские подписи (статусы/приоритет/владелец/уверенность)
     screens/call_screen.dart     экран звонка (оверлей) + таймер + live-карточка
     screens/agreement_edit_dialog.dart правка/ручной ввод договорённости
+    screens/board_screen.dart    личная доска (секции) + вход на доску менеджера
+    screens/task_actions_sheet.dart действия по задаче
+    screens/manager_board_screen.dart доска менеджера (задачи/аналитика/сотрудники)
     screens/dialer_screen.dart   набор номера
 ```
 
@@ -158,11 +167,56 @@ missed), `dial`, `answer`, `decline`, `hangup`, `setMuted`. Платформен
   действия «Подтвердить» / «Отклонить» / «Изменить». Подтверждение создаёт задачу
   **только** на сервере (клиент ничего не создаёт сам). Правка — через
   `AgreementEditDialog` → `PATCH /agreements/{id}`.
+- **Подтверждённая карточка не «замораживается»** (§12–14): у `confirmed`
+  скрывается только «Подтвердить» (уже подтверждено), а «Отклонить» и «Изменить»
+  остаются — серверный `PATCH` работает в любом статусе и переносит правку на
+  задачу; `rejected` финальна, действий нет.
 - **Без согласия** запись выключена, лента не подключается, и карточка предлагает
   «Добавить договорённость вручную» (`POST /calls/{id}/agreements`).
 - **Устойчивость**: лента — best-effort; обрыв/неудача handshake не ломает звонок.
   Отключается на терминальном статусе, `clear()` и `dispose`.
 - Live-лента подключается только когда есть `call_id` и `recordingEnabled`.
+
+## Доски: личная и менеджера (Этап 8)
+
+Правила группировки/сортировки/фильтрации — чистые функции в `domain/board.dart`
+(без Flutter), поэтому виджеты тонкие, а логика покрыта юнит-тестами.
+
+### Личная доска (`ui/screens/board_screen.dart`)
+
+- **Секции** (`plan.md` §14): «Просроченные», «Сегодня», «Предстоящие»,
+  «Без срока», «Выполненные», «Отменённые». Порядок — просрочки сверху, затем
+  ближайшие дедлайны, затем приоритет; done/canceled в конце.
+- **Действия** (тап по задаче → `ui/screens/task_actions_sheet.dart`): «Взять в
+  работу», «Отметить выполненной», «Перенести срок», «Изменить приоритет»,
+  «Отменить». В карточке показывается источник (`task.description` — цитата из
+  звонка).
+- **Offline-first**: действие применяется оптимистично к локальному кэшу и
+  кладётся в `outbox` (`SyncOperation`, entity `task`, op `update`), затем
+  запускается sync (`plan.md` §9). Без сети правка остаётся в очереди; при
+  конфликте сервер авторитетен и перезапишет локальную запись. Правки одной
+  задачи коалесцируются (`removeByEntity`), в операции идёт известная версия.
+- **Связь со звонком/договорённостью**: показывается цитата источника; переход к
+  экрану звонка-источника — Этап 9 (история звонков).
+
+### Доска менеджера (`ui/screens/manager_board_screen.dart`)
+
+- Доступна только роли `manager` (иконка «Доска команды» в app bar личной
+  доски); сервер повторно проверяет роль и принадлежность команде.
+- **Данные не кэшируются локально** (AGENTS: телефон хранит только свои данные) —
+  `ManagerController` держит их в памяти и перезапрашивает при обновлении.
+  Клиенты — `/manager/team/tasks`, `/manager/team/stats`, `/manager/team/members`.
+- **Вкладки**: «Задачи» (фильтры сотрудник/статус/приоритет/тип, сортировка —
+  просрочки, затем ближайшие дедлайны), «Аналитика» (сводка из stats + разбивка
+  по сотрудникам, когда сервер её отдаёт), «Сотрудники» (состав команды).
+- Карточка задачи использует расширенный `ManagerTaskOut`: имя исполнителя,
+  клиент/контакт и привязку к звонку, если сервер их вернул (поля
+  необязательные — старый backend продолжает работать).
+- Фильтры сотрудник/статус/приоритет/тип/срок уходят на сервер (`user_id`,
+  `status`, `priority`, `task_type`, `due_before`); приоритет дополнительно
+  сужается на клиенте, чтобы доска работала и со старым backend без фильтра по
+  приоритету. Тип выбирается из значений, встречающихся в загруженных задачах
+  (в API нет списка типов).
 
 ## Вход
 
