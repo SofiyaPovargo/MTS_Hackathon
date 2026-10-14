@@ -45,6 +45,39 @@ class ApiClient {
   Future<Object?> delete(String path, {bool auth = true}) =>
       _send('DELETE', path, auth: auth);
 
+  /// Fetches a raw text body (e.g. `text/calendar`) without JSON decoding.
+  Future<String> getText(String path, {bool auth = true}) async {
+    final data = await _send(
+      'GET',
+      path,
+      auth: auth,
+      responseType: ResponseType.plain,
+    );
+    if (data is String) return data;
+    return data?.toString() ?? '';
+  }
+
+  /// Uploads raw bytes (call audio) with an explicit content type. The body is
+  /// sent as-is — never JSON-encoded — so `Content-Range` resumable chunks and
+  /// binary audio survive the round-trip.
+  Future<Object?> postBytes(
+    String path, {
+    required List<int> bytes,
+    required String contentType,
+    Map<String, Object?>? query,
+    Map<String, String>? extraHeaders,
+    bool auth = true,
+  }) =>
+      _send(
+        'POST',
+        path,
+        body: bytes,
+        query: query,
+        auth: auth,
+        contentType: contentType,
+        extraHeaders: extraHeaders,
+      );
+
   Future<Object?> _send(
     String method,
     String path, {
@@ -52,15 +85,27 @@ class ApiClient {
     Map<String, Object?>? query,
     bool auth = true,
     bool retried = false,
+    String? contentType,
+    Map<String, String>? extraHeaders,
+    ResponseType? responseType,
   }) async {
     try {
       final headers = await _headers(auth);
-      if (body != null) headers['Content-Type'] = 'application/json';
+      if (contentType != null) {
+        headers['Content-Type'] = contentType;
+      } else if (body != null) {
+        headers['Content-Type'] = 'application/json';
+      }
+      if (extraHeaders != null) headers.addAll(extraHeaders);
       final response = await _dio.request<Object?>(
         path,
         data: body,
         queryParameters: query,
-        options: Options(method: method, headers: headers),
+        options: Options(
+          method: method,
+          headers: headers,
+          responseType: responseType,
+        ),
       );
       return response.data;
     } on DioException catch (error) {
@@ -68,7 +113,17 @@ class ApiClient {
       if (auth && status == 401 && !retried && _refreshToken != null) {
         final renewed = await _refreshToken();
         if (renewed != null) {
-          return _send(method, path, body: body, query: query, auth: auth, retried: true);
+          return _send(
+            method,
+            path,
+            body: body,
+            query: query,
+            auth: auth,
+            retried: true,
+            contentType: contentType,
+            extraHeaders: extraHeaders,
+            responseType: responseType,
+          );
         }
         throw const ApiException(ApiErrorKind.sessionExpired, 'Session expired', statusCode: 401);
       }

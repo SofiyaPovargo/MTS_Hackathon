@@ -35,12 +35,17 @@ typedef Scope = ({
   FakeVoiceCallProvider voice,
   FakeAgreementApi agreementApi,
   FakeCallEventsPort events,
+  FakeScheduleApi schedule,
 });
 
-Scope setup({AppConsent consent = AppConsent.undecided}) {
+Scope setup({
+  AppConsent consent = AppConsent.undecided,
+  FakeScheduleApi? schedule,
+}) {
   final voice = FakeVoiceCallProvider();
   final agreementApi = FakeAgreementApi();
   final events = FakeCallEventsPort();
+  final scheduleApi = schedule ?? FakeScheduleApi();
   final container = ProviderContainer(
     overrides: <Override>[
       voiceCallProviderProvider.overrideWithValue(voice),
@@ -49,6 +54,8 @@ Scope setup({AppConsent consent = AppConsent.undecided}) {
       consentApiProvider.overrideWithValue(FakeConsentApi()),
       callEventsProvider.overrideWithValue(events),
       agreementApiProvider.overrideWithValue(agreementApi),
+      // Fake the summary: the real client hits the network when a call ends.
+      scheduleApiProvider.overrideWithValue(scheduleApi),
     ],
   );
   return (
@@ -56,6 +63,7 @@ Scope setup({AppConsent consent = AppConsent.undecided}) {
     voice: voice,
     agreementApi: agreementApi,
     events: events,
+    schedule: scheduleApi,
   );
 }
 
@@ -267,5 +275,36 @@ void main() {
 
     expect(find.text('Оплатить до 20-го'), findsOneWidget);
     expect(scope.agreementApi.stored['created-1']?.title, 'Оплатить до 20-го');
+  });
+
+  testWidgets('the итог звонка appears once a completed call has a summary',
+      (tester) async {
+    final scope = setup(
+      consent: const AppConsent(status: ConsentStatus.granted, synced: true),
+    );
+    addTearDown(scope.container.dispose);
+    final controller = scope.container.read(callControllerProvider.notifier);
+
+    await pumpOverlay(tester, scope);
+    await controller.startOutgoing('+79000000002');
+    scope.voice.emit(const CallSignal(kind: CallSignalKind.answered));
+    await tester.pumpAndSettle();
+
+    // No summary while the call is still live.
+    expect(find.text('Итог звонка'), findsNothing);
+
+    scope.events.emit(const CallEvent(
+      version: 1,
+      kind: CallEventKind.callEnded,
+      callId: testCallId,
+    ));
+    await tester.pumpAndSettle();
+
+    // The terminal call auto-loads the summary via ScheduleApi.
+    expect(scope.schedule.summaryCalls, 1);
+    expect(find.text('Итог звонка'), findsOneWidget);
+    expect(find.textContaining('Договорённостей: 2'), findsOneWidget);
+    expect(find.textContaining('подтверждено: 1'), findsOneWidget);
+    expect(find.text(scope.schedule.summary.summary), findsOneWidget);
   });
 }

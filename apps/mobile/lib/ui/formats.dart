@@ -3,11 +3,16 @@ import 'package:intl/intl.dart';
 import '../domain/enums.dart';
 
 final DateFormat _dueDateFormat = DateFormat('dd.MM.yyyy');
+final DateFormat _dateTimeFormat = DateFormat('dd.MM.yyyy HH:mm');
 
 /// Formats a due date for display. The MVP language is Russian; localization is
 /// wired through [MaterialApp] later.
 String formatDueDate(DateTime? date) =>
     date == null ? 'без срока' : _dueDateFormat.format(date.toLocal());
+
+/// Formats a date and time (calendar events, reminders) for display.
+String formatDateTime(DateTime? value) =>
+    value == null ? '—' : _dateTimeFormat.format(value.toLocal());
 
 String taskStatusLabel(TaskStatus status) => switch (status) {
       TaskStatus.newTask => 'Новая',
