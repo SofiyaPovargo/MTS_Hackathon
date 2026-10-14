@@ -149,7 +149,7 @@ abstract class IncomingCallSimulator {
   void simulateIncoming({required String phone, String? name});
 }
 
-/// Call records on the backend (`POST /calls`, `GET /calls/{id}`).
+/// Call records on the backend (`POST /calls`, `GET /calls`, `GET /calls/{id}`).
 abstract class CallApi {
   Future<Call> createCall({
     required CallDirection direction,
@@ -158,6 +158,9 @@ abstract class CallApi {
   });
 
   Future<Call> getCall(String id);
+
+  /// The user's own call history (`GET /calls`), newest first.
+  Future<List<Call>> calls();
 }
 
 /// The app user's consent to recording / AI processing

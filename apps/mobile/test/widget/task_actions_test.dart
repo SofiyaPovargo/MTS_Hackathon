@@ -1,4 +1,5 @@
 import 'package:agreement_capture/application/providers.dart';
+import 'package:agreement_capture/domain/schedule.dart';
 import 'package:agreement_capture/infrastructure/sync/sync_engine.dart';
 import 'package:agreement_capture/ui/screens/board_screen.dart';
 import 'package:flutter/material.dart';
@@ -113,14 +114,64 @@ void main() {
     final schedule = await pumpBoard(tester, local: boardWithTask());
 
     await openTask(tester);
-    await tester.tap(find.text('Напоминание'));
+    await tester.tap(find.text('Напоминания'));
     await tester.pumpAndSettle();
-    expect(find.text('Через час'), findsOneWidget);
+    expect(find.text('Добавить напоминание'), findsOneWidget);
 
+    await tester.tap(find.text('Добавить напоминание'));
+    await tester.pumpAndSettle();
     await tester.tap(find.text('Через час'));
     await tester.pumpAndSettle();
 
+    expect(schedule.listReminderCalls, 1);
     expect(schedule.reminderCalls, 1);
     expect(find.textContaining('Напоминание создано'), findsOneWidget);
+  });
+
+  testWidgets('the reminders sheet lists and cancels a reminder',
+      (tester) async {
+    await tester.binding.setSurfaceSize(const Size(800, 1400));
+    addTearDown(() => tester.binding.setSurfaceSize(null));
+    final local = boardWithTask();
+    final schedule = FakeScheduleApi(
+      storedReminders: <Reminder>[testReminder()],
+    );
+    await pumpBoard(tester, local: local, scheduleApi: schedule);
+
+    await openTask(tester);
+    await tester.tap(find.text('Напоминания'));
+    await tester.pumpAndSettle();
+
+    expect(schedule.listReminderCalls, 1);
+    expect(find.text('Запланировано'), findsOneWidget);
+
+    await tester.tap(find.byTooltip('Отменить'));
+    await tester.pumpAndSettle();
+
+    expect(schedule.cancelCalls, 1);
+    expect(find.text('Отменено'), findsOneWidget);
+  });
+
+  testWidgets('downloading .ics shows the calendar text and copies it',
+      (tester) async {
+    await tester.binding.setSurfaceSize(const Size(800, 1400));
+    addTearDown(() => tester.binding.setSurfaceSize(null));
+    final schedule = FakeScheduleApi(icsContent: 'BEGIN:VCALENDAR\r\nUID:1');
+    await pumpBoard(tester, local: boardWithTask(), scheduleApi: schedule);
+
+    await openTask(tester);
+    await tester.tap(find.text('Скачать .ics'));
+    await tester.pumpAndSettle();
+
+    // The user confirms before anything is produced.
+    expect(find.text('Скачать .ics?'), findsOneWidget);
+    expect(schedule.icsCalls, 0);
+
+    await tester.tap(find.text('Подтвердить'));
+    await tester.pumpAndSettle();
+
+    expect(schedule.icsCalls, 1);
+    expect(find.textContaining('BEGIN:VCALENDAR'), findsOneWidget);
+    expect(find.text('Копировать'), findsOneWidget);
   });
 }

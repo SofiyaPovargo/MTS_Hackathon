@@ -8,6 +8,7 @@ import '../../domain/enums.dart';
 import '../../domain/models.dart';
 import '../../infrastructure/api/api_exception.dart';
 import '../formats.dart';
+import 'call_history_screen.dart';
 import 'contacts_screen.dart';
 import 'dialer_screen.dart';
 import 'manager_board_screen.dart';
@@ -52,6 +53,13 @@ class BoardScreen extends ConsumerWidget {
             tooltip: 'Контакты',
             onPressed: () => Navigator.of(context).push(
               MaterialPageRoute<void>(builder: (_) => const ContactsScreen()),
+            ),
+          ),
+          IconButton(
+            icon: const Icon(Icons.history),
+            tooltip: 'История звонков',
+            onPressed: () => Navigator.of(context).push(
+              MaterialPageRoute<void>(builder: (_) => const CallHistoryScreen()),
             ),
           ),
           IconButton(

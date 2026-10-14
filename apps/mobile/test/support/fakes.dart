@@ -558,10 +558,16 @@ class FakeVoiceCallProvider
 }
 
 class FakeCallApi implements CallApi {
-  FakeCallApi({this.error});
+  FakeCallApi({this.error, List<Call>? history})
+      : history = history ?? <Call>[];
 
   ApiException? error;
   final List<Call> created = <Call>[];
+
+  /// Calls returned by [calls] / [getCall] (the user's history).
+  List<Call> history;
+
+  int listCalls = 0;
 
   @override
   Future<Call> createCall({
@@ -577,11 +583,27 @@ class FakeCallApi implements CallApi {
       contactName: contactName,
     );
     created.add(call);
+    history = <Call>[call, ...history];
     return call;
   }
 
   @override
-  Future<Call> getCall(String id) async => testCall(id: id);
+  Future<Call> getCall(String id) async {
+    final failure = error;
+    if (failure != null) throw failure;
+    return history.firstWhere(
+      (call) => call.id == id,
+      orElse: () => testCall(id: id),
+    );
+  }
+
+  @override
+  Future<List<Call>> calls() async {
+    listCalls++;
+    final failure = error;
+    if (failure != null) throw failure;
+    return List<Call>.unmodifiable(history);
+  }
 }
 
 class InMemoryConsentStore implements ConsentStore {

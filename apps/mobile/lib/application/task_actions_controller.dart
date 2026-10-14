@@ -94,6 +94,20 @@ class TaskActionsController extends Notifier<TaskActionsState> {
     }
   }
 
+  /// Builds the portable `.ics` text (`GET /tasks/{id}/calendar.ics`) so the user
+  /// can copy it into their own calendar app. Nothing is written externally.
+  /// Returns `null` on failure (message on [TaskActionsState.error]).
+  Future<String?> ics(String taskId) async {
+    try {
+      final content = await _api.ics(taskId);
+      state = state.copyWith(clearError: true);
+      return content;
+    } on ApiException catch (error) {
+      state = state.copyWith(error: error.message);
+      return null;
+    }
+  }
+
   /// Schedules a reminder (`POST /tasks/{id}/reminders`).
   Future<String?> createReminder(
     String taskId, {

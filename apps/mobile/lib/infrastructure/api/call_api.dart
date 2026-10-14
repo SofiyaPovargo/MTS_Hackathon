@@ -29,4 +29,10 @@ class HttpCallApi implements CallApi {
     final data = await _client.get('/calls/$id');
     return Call.fromJson(asJsonMap(data));
   }
+
+  @override
+  Future<List<Call>> calls() async {
+    final data = await _client.get('/calls');
+    return asJsonList(data).map(Call.fromJson).toList();
+  }
 }

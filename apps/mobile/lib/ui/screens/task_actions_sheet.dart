@@ -8,6 +8,8 @@ import '../../domain/enums.dart';
 import '../../domain/models.dart';
 import '../../domain/schedule.dart';
 import '../formats.dart';
+import 'call_detail_screen.dart';
+import 'reminders_sheet.dart';
 
 /// Bottom sheet with the personal-board task actions (plan.md §14): start,
 /// complete, reschedule, change priority, cancel. It also shows the link to the
@@ -109,15 +111,26 @@ class _TaskActionsSheet extends ConsumerWidget {
               onTap: () => _deleteFromCalendar(context, ref),
             ),
             ListTile(
+              leading: const Icon(Icons.download_outlined),
+              title: const Text('Скачать .ics'),
+              onTap: () => _downloadIcs(context, ref),
+            ),
+            ListTile(
               leading: const Icon(Icons.sms_outlined),
               title: const Text('Черновик клиенту'),
               onTap: () => _messageDraft(context, ref),
             ),
             ListTile(
-              leading: const Icon(Icons.alarm_add_outlined),
-              title: const Text('Напоминание'),
-              onTap: () => _createReminder(context, ref),
+              leading: const Icon(Icons.alarm_outlined),
+              title: const Text('Напоминания'),
+              onTap: () => showRemindersSheet(context, task),
             ),
+            if ((task.callId ?? '').isNotEmpty)
+              ListTile(
+                leading: const Icon(Icons.phone_in_talk_outlined),
+                title: const Text('К звонку-источнику'),
+                onTap: () => _openSourceCall(context),
+              ),
           ],
         ),
       ),
@@ -276,58 +289,77 @@ class _TaskActionsSheet extends ConsumerWidget {
     if (navigator.canPop()) navigator.pop();
   }
 
-  Future<void> _createReminder(BuildContext context, WidgetRef ref) async {
-    final preset = await showDialog<_ReminderPreset>(
-      context: context,
-      builder: (dialogContext) => SimpleDialog(
-        title: const Text('Напоминание'),
-        children: <Widget>[
-          for (final option in _ReminderPreset.values)
-            SimpleDialogOption(
-              onPressed: () => Navigator.of(dialogContext).pop(option),
-              child: Text(option.label),
-            ),
-        ],
-      ),
+  Future<void> _downloadIcs(BuildContext context, WidgetRef ref) async {
+    final confirmed = await _confirm(
+      context,
+      'Скачать .ics?',
+      'Для задачи «${task.title}» будет сформирован файл календаря, '
+          'который можно вставить в свой календарь.',
     );
-    if (preset == null || !context.mounted) return;
-    final remindAt = preset.resolve(DateTime.now());
+    if (!confirmed || !context.mounted) return;
     final messenger = ScaffoldMessenger.of(context);
     final navigator = Navigator.of(context);
     final controller = ref.read(taskActionsControllerProvider.notifier);
-    final error = await controller.createReminder(task.id, remindAt: remindAt);
-    if (navigator.canPop()) navigator.pop();
-    if (error != null) {
-      messenger.showSnackBar(SnackBar(content: Text(error)));
+    final content = await controller.ics(task.id);
+    if (!context.mounted) return;
+    if (content == null) {
+      final message = ref.read(taskActionsControllerProvider).error ??
+          'Не удалось получить .ics';
+      if (navigator.canPop()) navigator.pop();
+      messenger.showSnackBar(SnackBar(content: Text(message)));
       return;
     }
-    messenger.showSnackBar(
-      SnackBar(content: Text('Напоминание создано: ${formatDateTime(remindAt)}')),
+    await showDialog<void>(
+      context: context,
+      builder: (_) => _IcsDialog(content: content),
+    );
+    if (navigator.canPop()) navigator.pop();
+  }
+
+  void _openSourceCall(BuildContext context) {
+    final callId = task.callId;
+    if (callId == null) return;
+    final navigator = Navigator.of(context);
+    if (navigator.canPop()) navigator.pop();
+    navigator.push(
+      MaterialPageRoute<void>(builder: (_) => CallDetailScreen(callId: callId)),
     );
   }
 }
 
-/// Reminder presets offered in the task actions sheet.
-enum _ReminderPreset {
-  inHour('Через час'),
-  todayEvening('Сегодня в 19:00'),
-  tomorrowMorning('Завтра в 9:00');
+/// Shows the portable `.ics` text; copying it puts the event into the user's own
+/// calendar without the app writing to any external system.
+class _IcsDialog extends StatelessWidget {
+  const _IcsDialog({required this.content});
 
-  const _ReminderPreset(this.label);
+  final String content;
 
-  final String label;
-
-  /// The concrete time for this preset, relative to [now].
-  DateTime resolve(DateTime now) {
-    switch (this) {
-      case _ReminderPreset.inHour:
-        return now.add(const Duration(hours: 1));
-      case _ReminderPreset.todayEvening:
-        final today = DateTime(now.year, now.month, now.day, 19);
-        return today.isAfter(now) ? today : today.add(const Duration(days: 1));
-      case _ReminderPreset.tomorrowMorning:
-        return DateTime(now.year, now.month, now.day + 1, 9);
-    }
+  @override
+  Widget build(BuildContext context) {
+    return AlertDialog(
+      title: const Text('Событие .ics'),
+      content: SingleChildScrollView(
+        child: SelectableText(content),
+      ),
+      actions: <Widget>[
+        TextButton.icon(
+          onPressed: () async {
+            await Clipboard.setData(ClipboardData(text: content));
+            if (context.mounted) {
+              ScaffoldMessenger.of(context).showSnackBar(
+                const SnackBar(content: Text('Скопировано')),
+              );
+            }
+          },
+          icon: const Icon(Icons.copy, size: 18),
+          label: const Text('Копировать'),
+        ),
+        FilledButton(
+          onPressed: () => Navigator.of(context).pop(),
+          child: const Text('Закрыть'),
+        ),
+      ],
+    );
   }
 }
 
