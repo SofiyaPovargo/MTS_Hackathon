@@ -94,6 +94,15 @@ class CallAnalyzeResponse(BaseModel):
     status: str
 
 
+class CallSummaryOut(BaseModel):
+    """Итог звонка (§9): резюме разговора и счётчики договорённостей."""
+
+    call_id: uuid.UUID
+    summary: str
+    agreements_total: int
+    agreements_confirmed: int
+
+
 class CallAudioAccepted(BaseModel):
     """Stored client audio (a whole object or one resumable chunk).
 
@@ -232,6 +241,65 @@ class TaskPatchRequest(BaseModel):
     due_time: time | None = None
     priority: TaskPriority | None = None
     status: TaskStatus | None = None
+
+
+class ManagerTaskOut(BaseModel):
+    """A card on the team board (§15): assignee, client, call source, deadline."""
+
+    id: uuid.UUID
+    assignee_user_id: uuid.UUID
+    assignee_name: str | None = None
+    agreement_id: uuid.UUID | None = None
+    agreement_type: str | None = None
+    call_id: uuid.UUID | None = None
+    contact_name: str | None = None
+    contact_phone: str | None = None
+    title: str
+    description: str | None = None
+    due_date: date | None = None
+    due_time: time | None = None
+    priority: TaskPriority
+    status: TaskStatus
+    version: int
+    created_at: datetime
+    updated_at: datetime
+
+
+class TeamMemberOut(BaseModel):
+    id: uuid.UUID
+    phone: str
+    full_name: str
+    role: Role
+
+
+class MemberStatsOut(BaseModel):
+    """Per-employee analytics (§15)."""
+
+    user_id: uuid.UUID
+    full_name: str
+    agreements_total: int
+    tasks_total: int
+    tasks_by_status: dict[str, int]
+    overdue: int
+    done_on_time: int
+    done_on_time_percent: float
+    avg_close_hours: float | None = None
+    tasks_from_calls_percent: float
+
+
+class TeamStatsOut(BaseModel):
+    """Team analytics (§15): aggregate metrics plus a per-member breakdown."""
+
+    members_count: int
+    agreements_total: int
+    tasks_total: int
+    tasks_by_status: dict[str, int]
+    overdue: int
+    done_on_time: int
+    done_on_time_percent: float
+    avg_close_hours: float | None = None
+    tasks_from_calls_percent: float
+    members: list[MemberStatsOut]
 
 
 class CalendarEventOut(BaseModel):

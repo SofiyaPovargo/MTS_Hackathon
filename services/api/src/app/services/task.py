@@ -8,7 +8,7 @@ from typing import Any
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.domain.enums import Owner, ReminderStatus, TaskPriority, TaskStatus
+from app.domain.enums import Owner, ReminderStatus, TaskPriority, TaskStatus, TaskView
 from app.domain.errors import NotFound, ValidationFailed
 from app.domain.rules import can_create_task, resolve_task_status
 from app.infrastructure.db import repositories
@@ -43,6 +43,31 @@ def _seconds_of(value: time | None) -> int:
     if value is None:
         return 0
     return value.hour * 3600 + value.minute * 60 + value.second
+
+
+def _matches_view(
+    task: Task, *, view: TaskView, status: TaskStatus | None, today: date
+) -> bool:
+    """Personal-board slices. ``status`` is the already-resolved task status."""
+    if status is not None and task.status is not status:
+        return False
+    if view is TaskView.all:
+        return True
+    if view is TaskView.done:
+        return task.status is TaskStatus.done
+    if view is TaskView.overdue:
+        return task.status is TaskStatus.overdue
+    if view is TaskView.today:
+        return task.due_date == today and task.status not in (
+            TaskStatus.done,
+            TaskStatus.canceled,
+        )
+    # upcoming: strictly after today and still open
+    return (
+        task.due_date is not None
+        and task.due_date > today
+        and task.status not in (TaskStatus.done, TaskStatus.canceled)
+    )
 
 
 class TaskService:
@@ -201,12 +226,37 @@ class TaskService:
                 payload={"reminder_id": str(reminder.id), "remind_at": str(reminder.remind_at)},
             )
 
-    async def list_for_user(self, user: User, *, today: date | None = None) -> list[Task]:
-        tasks = list(await repositories.list_tasks_for_user(self._session, user.id))
+    async def list_for_user(
+        self,
+        user: User,
+        *,
+        view: TaskView = TaskView.all,
+        status: TaskStatus | None = None,
+        priority: TaskPriority | None = None,
+        due_before: date | None = None,
+        due_after: date | None = None,
+        today: date | None = None,
+    ) -> list[Task]:
+        """Personal board (``plan.md`` §14): tasks sliced by ``view``.
+
+        Column filters (priority, due range) run in SQL; the derived ``overdue``
+        status and the view/status slices are resolved here against ``today``.
+        """
+        tasks = list(
+            await repositories.list_tasks_for_user(
+                self._session,
+                user.id,
+                priority=priority,
+                due_before=due_before,
+                due_after=due_after,
+            )
+        )
         today = today or date.today()
         for task in tasks:
             task.status = resolve_task_status(task.status, task.due_date, today=today)
-        return tasks
+        return [
+            task for task in tasks if _matches_view(task, view=view, status=status, today=today)
+        ]
 
     async def patch(self, user: User, task: Task, changes: dict[str, Any]) -> Task:
         provided = set(changes)

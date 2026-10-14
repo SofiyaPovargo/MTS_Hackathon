@@ -66,6 +66,25 @@ class TaskPriority(StrEnum):
     high = "high"
 
 
+class TaskView(StrEnum):
+    """Personal-board slices (``plan.md`` §14): upcoming, overdue, today, done."""
+
+    all = "all"
+    today = "today"
+    overdue = "overdue"
+    upcoming = "upcoming"
+    done = "done"
+
+
+class TaskSort(StrEnum):
+    """Manager-board ordering (``plan.md`` §15); default is overdue-first."""
+
+    overdue = "overdue"
+    due_date = "due_date"
+    priority = "priority"
+    created = "created"
+
+
 class ReminderChannel(StrEnum):
     push = "push"
     local = "local"

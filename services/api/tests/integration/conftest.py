@@ -190,11 +190,12 @@ async def create_manual_agreement(
     title: str = "Отправить отчёт",
     owner: str = "user",
     due_date: str = "2026-10-20",
+    agreement_type: str = "obligation",
 ) -> dict[str, Any]:
     """Create a manual agreement on the call (the no-consent / correction path)."""
     response = await client.post(
         f"/api/calls/{call_id}/agreements",
-        json={"type": "obligation", "title": title, "owner": owner, "due_date": due_date},
+        json={"type": agreement_type, "title": title, "owner": owner, "due_date": due_date},
         headers=headers,
     )
     assert response.status_code == 201, response.text

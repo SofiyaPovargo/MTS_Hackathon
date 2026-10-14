@@ -9,6 +9,7 @@ rules require.
 from __future__ import annotations
 
 import uuid
+from datetime import date
 
 from fastapi import APIRouter, Depends, Header, Query, Request, Response
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -28,6 +29,7 @@ from app.api.dependencies import (
     get_task_service,
     require_voice_webhook,
 )
+from app.domain.enums import TaskPriority, TaskSort, TaskStatus, TaskView
 from app.domain.errors import (
     Conflict,
     NotFound,
@@ -43,6 +45,7 @@ from app.services.call_session import CallSessionService, get_call_or_404
 from app.services.consent import ConsentService
 from app.services.manager import ManagerDashboardService
 from app.services.schedule import ScheduleService
+from app.services.summary import CallSummaryService
 from app.services.sync import SyncService
 from app.services.task import TaskService
 from app.services.voice_webhooks import ExolveWebhookService
@@ -172,6 +175,25 @@ async def get_call(
     call = await get_call_or_404(session, call_id)
     await _require_call_owner(user, call.user_id)
     return schemas.CallOut.model_validate(call, from_attributes=True)
+
+
+@router.get("/calls/{call_id}/summary", response_model=schemas.CallSummaryOut)
+async def get_call_summary(
+    call_id: uuid.UUID,
+    user: User = Depends(get_current_user),
+    session: AsyncSession = Depends(get_session),
+) -> schemas.CallSummaryOut:
+    """Итог звонка (§9): резюме разговора и счётчики договорённостей.
+
+    Владелец звонка. Текст — производная от договорённостей, поэтому он
+    пересобирается на чтение (правка/подтверждение не оставляют устаревший итог).
+    Менеджер итог и договорённости подчинённого не получает.
+    """
+    call = await get_call_or_404(session, call_id)
+    await _require_call_owner(user, call.user_id)
+    result = await CallSummaryService(session).summary_for(call)
+    await session.commit()
+    return schemas.CallSummaryOut.model_validate(result)
 
 
 @router.post(
@@ -462,10 +484,23 @@ async def reject_agreement(
 
 @router.get("/me/tasks", response_model=list[schemas.TaskOut])
 async def list_my_tasks(
+    view: TaskView = TaskView.all,
+    status: TaskStatus | None = None,
+    priority: TaskPriority | None = None,
+    due_before: date | None = None,
+    due_after: date | None = None,
     user: User = Depends(get_current_user),
     tasks: TaskService = Depends(get_task_service),
 ) -> list[schemas.TaskOut]:
-    rows = await tasks.list_for_user(user)
+    """Personal board (§14): ``view`` slices of the current user's tasks."""
+    rows = await tasks.list_for_user(
+        user,
+        view=view,
+        status=status,
+        priority=priority,
+        due_before=due_before,
+        due_after=due_after,
+    )
     return [schemas.TaskOut.model_validate(task, from_attributes=True) for task in rows]
 
 
@@ -598,36 +633,48 @@ async def draft_task_message(
 # ---- manager board -------------------------------------------------------------
 
 
-@router.get("/manager/team/tasks")
+@router.get("/manager/team/tasks", response_model=list[schemas.ManagerTaskOut])
 async def manager_team_tasks(
     user_id: uuid.UUID | None = None,
-    status: str | None = None,
-    due_before: str | None = None,
+    status: TaskStatus | None = None,
+    priority: TaskPriority | None = None,
+    task_type: str | None = Query(default=None, description="Agreement type filter"),
+    due_before: date | None = None,
+    due_after: date | None = None,
+    sort: TaskSort = TaskSort.overdue,
     user: User = Depends(get_current_user),
     manager: ManagerDashboardService = Depends(get_manager_service),
-) -> list[dict[str, object]]:
-    from datetime import date as _date
+) -> list[schemas.ManagerTaskOut]:
+    """Team board (§15): filters by employee, status, priority, type and term."""
+    rows = await manager.team_tasks(
+        user,
+        user_id=user_id,
+        status=status,
+        priority=priority,
+        task_type=task_type,
+        due_before=due_before,
+        due_after=due_after,
+        sort=sort,
+    )
+    return [schemas.ManagerTaskOut.model_validate(row) for row in rows]
 
-    builtin: _date | None = None
-    if due_before is not None:
-        builtin = _date.fromisoformat(due_before)
-    return await manager.team_tasks(user, user_id=user_id, status=status, due_before=builtin)
 
-
-@router.get("/manager/team/stats")
+@router.get("/manager/team/stats", response_model=schemas.TeamStatsOut)
 async def manager_team_stats(
     user: User = Depends(get_current_user),
     manager: ManagerDashboardService = Depends(get_manager_service),
-) -> dict[str, object]:
-    return await manager.team_stats(user)
+) -> schemas.TeamStatsOut:
+    """Team analytics (§15): aggregate metrics plus a per-member breakdown."""
+    return schemas.TeamStatsOut.model_validate(await manager.team_stats(user))
 
 
-@router.get("/manager/team/members")
+@router.get("/manager/team/members", response_model=list[schemas.TeamMemberOut])
 async def manager_team_members(
     user: User = Depends(get_current_user),
     manager: ManagerDashboardService = Depends(get_manager_service),
-) -> list[dict[str, object]]:
-    return await manager.team_members(user)
+) -> list[schemas.TeamMemberOut]:
+    rows = await manager.team_members(user)
+    return [schemas.TeamMemberOut.model_validate(row) for row in rows]
 
 
 # ---- sync ---------------------------------------------------------------------

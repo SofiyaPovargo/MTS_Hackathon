@@ -134,6 +134,7 @@ Calls (voice provider integration lives behind `VoiceProviderPort`)
 | POST   | `/calls/{id}/events`  | provider webhook, signed by `VOICE_WEBHOOK_SECRET` |
 | POST   | `/calls/{id}/audio`   | client uploads the recorded audio (`audio/*` body; optional `?leg=operator|client`, `?duration_sec`, `?restart`). **Resumable**: with `Content-Range: bytes <start>-<end>/<total>` the body is one chunk, stored immediately, and the response `offset` says where to resume after a network drop (a retried chunk is idempotent; a gap → 409 with `expected_offset`). 202; queues ASR once complete. 409 if the call was not recorded, 413 oversized, 422 bad type/bad range, 403 foreign call |
 | POST   | `/calls/{id}/analyze` | queue ASR + extraction for a recorded call (202, returns `{call_id,status}`) |
+| GET    | `/calls/{id}/summary` | итог звонка (§9): deterministic summary of the call + agreement counts (owner-only) |
 
 Voice provider webhooks (МТС Exolve, signed by `VOICE_WEBHOOK_SECRET` as an
 `X-Voice-Webhook-Secret` header or a `?secret=` query param — Exolve cannot set
@@ -159,7 +160,7 @@ Tasks
 
 | method | path                    | notes                               |
 | ------ | ----------------------- | ----------------------------------- |
-| GET    | `/me/tasks`             | tasks created from confirmed agreements |
+| GET    | `/me/tasks`             | personal board (§14): `view=today\|overdue\|upcoming\|done\|all`, plus `status`/`priority`/`due_before`/`due_after` |
 | PATCH  | `/tasks/{id}`           | edit (status transitions validated) |
 | POST   | `/tasks/{id}/complete`  | mark done                           |
 | POST   | `/tasks/{id}/calendar`  | write the task into the calendar (explicit action) |
@@ -173,8 +174,8 @@ Manager board (role + team membership enforced server-side)
 
 | method | path                    | notes                               |
 | ------ | ----------------------- | ----------------------------------- |
-| GET    | `/manager/team/tasks`   | filters: `user_id`, `status`, `due_before` |
-| GET    | `/manager/team/stats`   | team metrics                        |
+| GET    | `/manager/team/tasks`   | filters: `user_id`, `status`, `priority`, `task_type`, `due_before`, `due_after`; `sort=overdue\|due_date\|priority\|created` (default overdue-first) |
+| GET    | `/manager/team/stats`   | team metrics + per-member breakdown (incl. `agreements_total`) |
 | GET    | `/manager/team/members` | team roster                         |
 
 Sync (deltas, idempotent push)
