@@ -270,6 +270,9 @@ missed), `dial`, `answer`, `decline`, `hangup`, `setMuted`. Платформен
     (`GET /tasks/{id}/reminders`) с отменой (`POST /reminders/{id}/cancel`) и
     добавлением пресетами (`POST /tasks/{id}/reminders`);
   - «К звонку-источнику» → экран звонка со сводкой, если у задачи есть `TaskItem.callId`.
+    **Зависимость backend:** личная доска `TaskOut` (и sync) пока не отдают `call_id`,
+    поэтому пункт появится после добавления `call_id` в `TaskOut`/схему задач (трек C);
+    у `ManagerTaskOut` поле уже есть.
 - **Порт `CallApi`** расширен: `calls()` (`GET /calls`) — история звонков владельца.
 - **История звонков**: `ui/screens/call_history_screen.dart` (`callHistoryProvider`)
   — список звонков пользователя (контакт, направление, время, статус),
