@@ -1,10 +1,12 @@
 import 'dart:async';
 
+import 'package:agreement_capture/domain/audio.dart';
 import 'package:agreement_capture/domain/call.dart';
 import 'package:agreement_capture/domain/consent.dart';
 import 'package:agreement_capture/domain/enums.dart';
 import 'package:agreement_capture/domain/models.dart';
 import 'package:agreement_capture/domain/ports.dart';
+import 'package:agreement_capture/domain/schedule.dart';
 import 'package:agreement_capture/domain/sync_models.dart';
 import 'package:agreement_capture/domain/ws_event.dart';
 import 'package:agreement_capture/infrastructure/api/api_exception.dart';
@@ -150,6 +152,68 @@ ConsentRecord testConsentRecord({
     subjectType: 'app_user',
     status: status,
     method: ConsentMethod.appSettings,
+  );
+}
+
+CallSummary testCallSummary({
+  String callId = '55555555-5555-5555-5555-555555555555',
+  String summary = 'Договорились оплатить счёт до пятницы.',
+  int agreementsTotal = 2,
+  int agreementsConfirmed = 1,
+}) {
+  return CallSummary(
+    callId: callId,
+    summary: summary,
+    agreementsTotal: agreementsTotal,
+    agreementsConfirmed: agreementsConfirmed,
+  );
+}
+
+CalendarEvent testCalendarEvent({
+  String taskId = 't1',
+  String eventId = 'evt-1',
+  String title = 'Позвонить клиенту',
+  DateTime? startsAt,
+  DateTime? endsAt,
+}) {
+  return CalendarEvent(
+    taskId: taskId,
+    eventId: eventId,
+    title: title,
+    startsAt: startsAt ?? DateTime.utc(2026, 10, 15, 9),
+    endsAt: endsAt ?? DateTime.utc(2026, 10, 15, 9, 30),
+  );
+}
+
+Reminder testReminder({
+  String id = 'rem-1',
+  String taskId = 't1',
+  DateTime? remindAt,
+  ReminderChannel channel = ReminderChannel.push,
+  ReminderStatus status = ReminderStatus.scheduled,
+}) {
+  return Reminder(
+    id: id,
+    taskId: taskId,
+    remindAt: remindAt ?? DateTime.utc(2026, 10, 15, 8),
+    channel: channel,
+    status: status,
+  );
+}
+
+MessageDraft testMessageDraft({
+  String taskId = 't1',
+  String draftId = 'draft-1',
+  String phone = '+79000000002',
+  String text = 'Анна, добрый день! Подтвердите, пожалуйста, оплату счёта.',
+  bool sent = false,
+}) {
+  return MessageDraft(
+    taskId: taskId,
+    draftId: draftId,
+    phone: phone,
+    text: text,
+    sent: sent,
   );
 }
 
@@ -454,6 +518,26 @@ class FakeVoiceCallProvider
   Future<void> setMuted(String externalId, bool value) async =>
       muted.add(value);
 
+  final List<String> mediaStreamOpened = <String>[];
+  StreamController<List<int>>? _mediaController;
+
+  @override
+  Stream<List<int>> openMediaStream(String externalId) {
+    mediaStreamOpened.add(externalId);
+    final controller = StreamController<List<int>>();
+    _mediaController = controller;
+    controller.onCancel = () {
+      if (identical(_mediaController, controller)) _mediaController = null;
+    };
+    return controller.stream;
+  }
+
+  /// Pushes a captured audio chunk to the active media stream (tests).
+  void emitAudio(List<int> bytes) {
+    final controller = _mediaController;
+    if (controller != null && !controller.isClosed) controller.add(bytes);
+  }
+
   @override
   void simulateIncoming({required String phone, String? name}) {
     emit(
@@ -661,5 +745,288 @@ class FakeAgreementApi implements AgreementApi {
         .copyWith(status: AgreementStatus.rejected, version: 100);
     stored[updated.id] = updated;
     return updated;
+  }
+}
+
+/// In-memory [AudioRecordingStore] for tests: bytes are held per call.
+class InMemoryAudioRecordingStore implements AudioRecordingStore {
+  final Map<String, List<int>> bytes = <String, List<int>>{};
+  final Map<String, CallRecording> records = <String, CallRecording>{};
+
+  @override
+  Future<CallRecording> begin(
+    String callId, {
+    String contentType = 'audio/wav',
+    Duration? keepFor,
+  }) async {
+    bytes[callId] = <int>[];
+    final now = DateTime.now().toUtc();
+    final recording = CallRecording(
+      callId: callId,
+      path: 'memory://$callId',
+      bytesTotal: 0,
+      uploadedBytes: 0,
+      status: RecordingUploadStatus.recording,
+      createdAt: now,
+      contentType: contentType,
+      keepUntil: keepFor == null ? null : now.add(keepFor),
+    );
+    records[callId] = recording;
+    return recording;
+  }
+
+  @override
+  Future<CallRecording> append(String callId, List<int> chunk) async {
+    final current = records[callId] ?? await begin(callId);
+    final buffer = bytes.putIfAbsent(callId, () => <int>[]);
+    buffer.addAll(chunk);
+    final updated = current.copyWith(bytesTotal: buffer.length);
+    records[callId] = updated;
+    return updated;
+  }
+
+  @override
+  Future<CallRecording?> get(String callId) async => records[callId];
+
+  @override
+  Future<List<int>> readFrom(String callId, int offset) async {
+    final buffer = bytes[callId] ?? const <int>[];
+    if (offset >= buffer.length) return <int>[];
+    return buffer.sublist(offset);
+  }
+
+  @override
+  Future<void> markUploaded(
+    String callId, {
+    required int uploadedBytes,
+    required bool complete,
+  }) async {
+    final current = records[callId];
+    if (current == null) return;
+    records[callId] = current.copyWith(
+      uploadedBytes: uploadedBytes,
+      status: complete ? RecordingUploadStatus.uploaded : current.status,
+      uploadedAt: complete ? DateTime.now().toUtc() : current.uploadedAt,
+    );
+  }
+
+  @override
+  Future<void> setStatus(String callId, RecordingUploadStatus status) async {
+    final current = records[callId];
+    if (current == null) return;
+    records[callId] = current.copyWith(status: status);
+  }
+
+  @override
+  Future<List<CallRecording>> pending() async => records.values
+      .where((r) => r.status == RecordingUploadStatus.pending)
+      .toList();
+
+  @override
+  Future<void> delete(String callId) async {
+    records.remove(callId);
+    bytes.remove(callId);
+  }
+
+  @override
+  Future<void> enforceRetention({int maxRecordings = 20}) async {
+    final uploaded = records.values
+        .where((r) => r.status == RecordingUploadStatus.uploaded)
+        .toList()
+      ..sort((a, b) => b.createdAt.compareTo(a.createdAt));
+    for (final recording in uploaded.skip(maxRecordings)) {
+      await delete(recording.callId);
+    }
+  }
+}
+
+/// Records ingest requests; can fail to simulate a dropped network.
+class FakeAudioIngestApi implements AudioIngestApi {
+  final List<({String callId, int? start, int? total, int length})> calls =
+      <({String callId, int? start, int? total, int length})>[];
+  int failRemaining = 0;
+
+  /// Offsets the server reports; defaults to start + length.
+  int? forcedOffset;
+
+  @override
+  Future<AudioIngestResult> upload({
+    required String callId,
+    required List<int> bytes,
+    int? start,
+    int? total,
+    String? contentType,
+    int? durationSec,
+  }) async {
+    if (failRemaining > 0) {
+      failRemaining--;
+      throw const ApiException(ApiErrorKind.network, 'offline');
+    }
+    calls.add((callId: callId, start: start, total: total, length: bytes.length));
+    final offset = forcedOffset ?? (start ?? 0) + bytes.length;
+    final boundary = total ?? offset;
+    return AudioIngestResult(offset: offset, complete: offset >= boundary);
+  }
+}
+
+/// Collects live frames; can fail to simulate a socket drop.
+class FakeLiveAudioPort implements LiveAudioPort {
+  final List<String> connected = <String>[];
+  final List<int> frames = <int>[];
+  bool down = false;
+  int closes = 0;
+
+  @override
+  Future<void> connect(String callId) async {
+    if (down) throw const ApiException(ApiErrorKind.network, 'offline');
+    connected.add(callId);
+  }
+
+  @override
+  Future<void> send(List<int> frame) async {
+    if (down) throw const ApiException(ApiErrorKind.network, 'offline');
+    frames.addAll(frame);
+  }
+
+  @override
+  Future<void> close() async {
+    closes++;
+  }
+}
+
+/// Controllable [ScheduleApi]: returns canned summary/calendar/reminder/draft
+/// data and records calls. `error` fails every method; [deleteStatus] simulates
+/// the not-yet-implemented calendar delete (404/405).
+class FakeScheduleApi implements ScheduleApi {
+  FakeScheduleApi({
+    CallSummary? summary,
+    CalendarEvent? event,
+    MessageDraft? draft,
+    List<Reminder>? storedReminders,
+    this.icsContent = 'BEGIN:VCALENDAR\r\nEND:VCALENDAR',
+    this.error,
+    this.deleteStatus,
+  })  : summary = summary ?? testCallSummary(),
+        event = event ?? testCalendarEvent(),
+        draft = draft ?? testMessageDraft(),
+        storedReminders = storedReminders ?? <Reminder>[];
+
+  CallSummary summary;
+  CalendarEvent event;
+  MessageDraft draft;
+  List<Reminder> storedReminders;
+  String icsContent;
+  ApiException? error;
+
+  /// When set, [deleteCalendarEvent] throws with this status (404/405).
+  int? deleteStatus;
+
+  int summaryCalls = 0;
+  int calendarCalls = 0;
+  int icsCalls = 0;
+  int deleteCalls = 0;
+  int reminderCalls = 0;
+  int listReminderCalls = 0;
+  int cancelCalls = 0;
+  int draftCalls = 0;
+  DateTime? lastRemindAt;
+  ReminderChannel? lastChannel;
+
+  int _reminderIdSeq = 0;
+
+  void _maybeThrow() {
+    final failure = error;
+    if (failure != null) throw failure;
+  }
+
+  @override
+  Future<CallSummary> callSummary(String callId) async {
+    summaryCalls++;
+    _maybeThrow();
+    return summary;
+  }
+
+  @override
+  Future<CalendarEvent> createCalendarEvent(String taskId) async {
+    calendarCalls++;
+    _maybeThrow();
+    return event;
+  }
+
+  @override
+  Future<String> ics(String taskId) async {
+    icsCalls++;
+    _maybeThrow();
+    return icsContent;
+  }
+
+  @override
+  Future<void> deleteCalendarEvent(String taskId) async {
+    deleteCalls++;
+    final status = deleteStatus;
+    if (status != null) {
+      throw ApiException(
+        ApiErrorKind.notFound,
+        'Calendar delete not available',
+        statusCode: status,
+      );
+    }
+    _maybeThrow();
+  }
+
+  @override
+  Future<Reminder> createReminder(
+    String taskId, {
+    required DateTime remindAt,
+    ReminderChannel channel = ReminderChannel.push,
+  }) async {
+    reminderCalls++;
+    _maybeThrow();
+    lastRemindAt = remindAt;
+    lastChannel = channel;
+    final reminder = testReminder(
+      id: 'rem-${++_reminderIdSeq}',
+      taskId: taskId,
+      remindAt: remindAt,
+      channel: channel,
+    );
+    storedReminders = <Reminder>[...storedReminders, reminder];
+    return reminder;
+  }
+
+  @override
+  Future<List<Reminder>> reminders(String taskId) async {
+    listReminderCalls++;
+    _maybeThrow();
+    return storedReminders.where((r) => r.taskId == taskId).toList();
+  }
+
+  @override
+  Future<Reminder> cancelReminder(String reminderId) async {
+    cancelCalls++;
+    _maybeThrow();
+    final current = storedReminders.firstWhere(
+      (r) => r.id == reminderId,
+      orElse: () => testReminder(id: reminderId),
+    );
+    final canceled = Reminder(
+      id: current.id,
+      taskId: current.taskId,
+      remindAt: current.remindAt,
+      channel: current.channel,
+      status: ReminderStatus.canceled,
+    );
+    storedReminders = <Reminder>[
+      for (final reminder in storedReminders)
+        if (reminder.id == reminderId) canceled else reminder,
+    ];
+    return canceled;
+  }
+
+  @override
+  Future<MessageDraft> draftMessage(String taskId) async {
+    draftCalls++;
+    _maybeThrow();
+    return draft;
   }
 }

@@ -73,6 +73,17 @@ class MockVoiceCallProvider implements VoiceCallProvider, IncomingCallSimulator 
   @override
   Future<void> setMuted(String externalId, bool muted) async {}
 
+  /// Emits synthetic 8 kHz mono PCM16 chunks (200 ms of silence) so the Stage 6
+  /// pipeline — local buffer, live WS stream, resumable upload — is demoable
+  /// without the native SDK. Cancelling the subscription stops capture.
+  /// Emits synthetic 8 kHz mono PCM16 chunks (200 ms of silence) so the Stage 6
+  /// pipeline — local buffer, live WS stream, resumable upload — is demoable
+  /// without the native SDK. Cancelling the subscription stops capture.
+  @override
+  Stream<List<int>> openMediaStream(String externalId) =>
+      Stream<List<int>>.periodic(const Duration(milliseconds: 200))
+          .map((_) => List<int>.filled(3200, 0));
+
   @override
   void simulateIncoming({required String phone, String? name}) {
     emit(CallSignal(

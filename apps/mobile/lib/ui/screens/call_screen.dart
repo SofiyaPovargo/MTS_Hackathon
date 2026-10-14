@@ -8,6 +8,7 @@ import '../../application/providers.dart';
 import '../../domain/call.dart';
 import '../../domain/enums.dart';
 import '../../domain/models.dart';
+import '../../domain/schedule.dart';
 import '../../domain/ws_event.dart';
 import '../formats.dart';
 import 'agreement_edit_dialog.dart';
@@ -138,6 +139,7 @@ class CallScreen extends ConsumerWidget {
     }
     return call.transcript.isNotEmpty ||
         call.agreements.isNotEmpty ||
+        call.callSummary != null ||
         (call.isConnected && !call.recordingEnabled);
   }
 }
@@ -278,6 +280,13 @@ class _LiveCard extends StatelessWidget {
       shrinkWrap: true,
       padding: const EdgeInsets.only(bottom: 8),
       children: <Widget>[
+        if (call.callSummary != null) ...<Widget>[
+          _CallSummaryCard(
+            summary: call.callSummary!,
+            onRefresh: () => _refreshSummary(context),
+          ),
+          const SizedBox(height: 8),
+        ],
         if (call.agreements.isNotEmpty) ...<Widget>[
           for (final agreement in call.agreements) ...<Widget>[
             _AgreementCard(agreement: agreement, controller: controller),
@@ -346,6 +355,61 @@ class _LiveCard extends StatelessWidget {
       ScaffoldMessenger.of(context)
           .showSnackBar(SnackBar(content: Text(error)));
     }
+  }
+
+  /// Reloads the call итог and surfaces an error, if any.
+  Future<void> _refreshSummary(BuildContext context) async {
+    final messenger = ScaffoldMessenger.of(context);
+    final error = await controller.loadSummary();
+    if (error != null) {
+      messenger.showSnackBar(SnackBar(content: Text(error)));
+    }
+  }
+}
+
+/// Итог звонка card (plan.md §9): the summary text plus the agreement counters,
+/// with a refresh action. Shown once the backend has produced a summary.
+class _CallSummaryCard extends StatelessWidget {
+  const _CallSummaryCard({required this.summary, required this.onRefresh});
+
+  final CallSummary summary;
+  final Future<void> Function() onRefresh;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.all(12),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: <Widget>[
+            Row(
+              children: <Widget>[
+                Expanded(
+                  child: Text('Итог звонка', style: theme.textTheme.labelLarge),
+                ),
+                IconButton(
+                  icon: const Icon(Icons.refresh, size: 20),
+                  tooltip: 'Обновить итог',
+                  onPressed: () => onRefresh(),
+                ),
+              ],
+            ),
+            if (summary.summary.isNotEmpty) ...<Widget>[
+              const SizedBox(height: 4),
+              Text(summary.summary, style: theme.textTheme.bodyMedium),
+            ],
+            const SizedBox(height: 4),
+            Text(
+              'Договорённостей: ${summary.agreementsTotal} · '
+              'подтверждено: ${summary.agreementsConfirmed}',
+              style: theme.textTheme.bodySmall,
+            ),
+          ],
+        ),
+      ),
+    );
   }
 }
 

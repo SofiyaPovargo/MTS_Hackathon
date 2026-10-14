@@ -1,8 +1,10 @@
 import 'dart:io';
 
+import 'package:agreement_capture/domain/audio.dart';
 import 'package:agreement_capture/domain/consent.dart';
 import 'package:agreement_capture/domain/enums.dart';
 import 'package:agreement_capture/domain/sync_models.dart';
+import 'package:agreement_capture/infrastructure/audio/file_audio_recording_store.dart';
 import 'package:agreement_capture/infrastructure/db/app_database.dart';
 import 'package:agreement_capture/infrastructure/db/consent_store.dart';
 import 'package:agreement_capture/infrastructure/db/local_board_store.dart';
@@ -189,6 +191,69 @@ void main() {
         await db.query('session', where: 'key = ?', whereArgs: const ['current']),
         hasLength(1),
       );
+    });
+  });
+
+  group('FileAudioRecordingStore', () {
+    late Directory audioDir;
+
+    setUp(() async {
+      audioDir = await Directory.systemTemp.createTemp('audio_store');
+    });
+
+    tearDown(() => audioDir.delete(recursive: true));
+
+    FileAudioRecordingStore build() => FileAudioRecordingStore(
+          database,
+          resolveDirectory: () async => audioDir.path,
+        );
+
+    test('buffers bytes, tracks offsets and lists pending uploads', () async {
+      final store = build();
+      await store.begin('c1', keepFor: const Duration(days: 7));
+      await store.append('c1', List<int>.filled(4, 1));
+      await store.append('c1', List<int>.filled(6, 2));
+
+      final recording = await store.get('c1');
+      expect(recording!.bytesTotal, 10);
+      expect(recording.needsUpload, isTrue);
+      expect(recording.keepUntil, isNotNull);
+      expect(await store.readFrom('c1', 4), hasLength(6));
+
+      await store.setStatus('c1', RecordingUploadStatus.pending);
+      expect(await store.pending(), hasLength(1));
+
+      await store.markUploaded('c1', uploadedBytes: 10, complete: true);
+      final done = await store.get('c1');
+      expect(done!.status, RecordingUploadStatus.uploaded);
+      expect(done.isUploaded, isTrue);
+      expect(await store.pending(), isEmpty);
+    });
+
+    test('deletes the file and row', () async {
+      final store = build();
+      await store.begin('c1');
+      await store.append('c1', List<int>.filled(2, 0));
+
+      await store.delete('c1');
+      expect(await store.get('c1'), isNull);
+      expect(File('${audioDir.path}/c1.audio').existsSync(), isFalse);
+    });
+
+    test('drops the oldest uploaded recordings above the cap', () async {
+      final store = build();
+      for (final id in <String>['a', 'b', 'c']) {
+        await store.begin(id);
+        await store.append(id, List<int>.filled(2, 0));
+        await store.markUploaded(id, uploadedBytes: 2, complete: true);
+        await Future<void>.delayed(const Duration(milliseconds: 2));
+      }
+
+      await store.enforceRetention(maxRecordings: 2);
+
+      final db = await database.open();
+      final rows = await db.query('audio_recordings');
+      expect(rows, hasLength(2));
     });
   });
 }

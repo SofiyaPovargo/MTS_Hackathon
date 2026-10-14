@@ -9,11 +9,11 @@ import 'package:sqflite/sqflite.dart';
 /// the same `fromJson` parsers.
 class AppDatabase {
   AppDatabase({DatabaseFactory? factory, String fileName = 'agreement_capture.db', String? path})
-      : _factory = factory ?? databaseFactory,
+      : _factory = factory,
         _fileName = fileName,
         _path = path;
 
-  static const int schemaVersion = 2;
+  static const int schemaVersion = 3;
 
   static const String _appSettingsTableSql = '''
       CREATE TABLE app_settings(
@@ -22,7 +22,23 @@ class AppDatabase {
       )
     ''';
 
-  final DatabaseFactory _factory;
+  static const String _audioRecordingsTableSql = '''
+      CREATE TABLE audio_recordings(
+        call_id TEXT PRIMARY KEY,
+        path TEXT NOT NULL,
+        content_type TEXT NOT NULL DEFAULT 'audio/wav',
+        bytes_total INTEGER NOT NULL DEFAULT 0,
+        uploaded_bytes INTEGER NOT NULL DEFAULT 0,
+        status TEXT NOT NULL,
+        created_at TEXT NOT NULL,
+        uploaded_at TEXT,
+        keep_until TEXT
+      )
+    ''';
+
+  /// The sqflite factory is resolved lazily so constructing the database (and
+  /// therefore wiring providers) never touches the platform channel.
+  final DatabaseFactory? _factory;
   final String _fileName;
   final String? _path;
   Future<Database>? _opening;
@@ -38,8 +54,9 @@ class AppDatabase {
   }
 
   Future<Database> _open() async {
-    final location = _path ?? p.join(await _factory.getDatabasesPath(), _fileName);
-    return _factory.openDatabase(
+    final factory = _factory ?? databaseFactory;
+    final location = _path ?? p.join(await factory.getDatabasesPath(), _fileName);
+    return factory.openDatabase(
       location,
       options: OpenDatabaseOptions(
         version: schemaVersion,
@@ -53,6 +70,9 @@ class AppDatabase {
   Future<void> _upgradeSchema(Database db, int oldVersion, int newVersion) async {
     if (oldVersion < 2) {
       await db.execute(_appSettingsTableSql);
+    }
+    if (oldVersion < 3) {
+      await db.execute(_audioRecordingsTableSql);
     }
   }
 
@@ -122,6 +142,7 @@ class AppDatabase {
       )
     ''');
     batch.execute(_appSettingsTableSql);
+    batch.execute(_audioRecordingsTableSql);
     await batch.commit(noResult: true);
   }
 }

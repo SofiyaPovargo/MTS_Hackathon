@@ -1,5 +1,6 @@
 import 'enums.dart';
 import 'models.dart';
+import 'schedule.dart';
 import 'ws_event.dart';
 
 /// A provider signal (voice SDK / VoIP event) the [CallController] reacts to.
@@ -43,6 +44,7 @@ class CallState {
     this.endedAt,
     this.transcript = const <TranscriptSegment>[],
     this.agreements = const <Agreement>[],
+    this.callSummary,
   });
 
   final CallLifecycleStatus status;
@@ -77,6 +79,9 @@ class CallState {
   /// copy is replaced by the server response after every user action.
   final List<Agreement> agreements;
 
+  /// Итог звонка (`GET /calls/{id}/summary`); loaded when the call ends.
+  final CallSummary? callSummary;
+
   bool get isIncoming => direction == CallDirection.inbound;
   bool get isTerminal => status.isTerminal;
 
@@ -104,6 +109,7 @@ class CallState {
     DateTime? endedAt,
     List<TranscriptSegment>? transcript,
     List<Agreement>? agreements,
+    CallSummary? callSummary,
   }) {
     return CallState(
       status: status ?? this.status,
@@ -120,6 +126,7 @@ class CallState {
       endedAt: endedAt ?? this.endedAt,
       transcript: transcript ?? this.transcript,
       agreements: agreements ?? this.agreements,
+      callSummary: callSummary ?? this.callSummary,
     );
   }
 }

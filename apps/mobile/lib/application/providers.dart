@@ -1,4 +1,9 @@
+import 'dart:async';
+import 'dart:io';
+
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:path/path.dart' as p;
+import 'package:sqflite/sqflite.dart';
 
 import '../core/config.dart';
 import '../domain/call.dart';
@@ -7,12 +12,15 @@ import '../domain/models.dart';
 import '../domain/ports.dart';
 import '../infrastructure/api/agreement_api.dart';
 import '../infrastructure/api/api_client.dart';
+import '../infrastructure/api/audio_ingest_api.dart';
 import '../infrastructure/api/auth_api.dart';
 import '../infrastructure/api/board_api.dart';
 import '../infrastructure/api/call_api.dart';
 import '../infrastructure/api/consent_api.dart';
 import '../infrastructure/api/manager_api.dart';
+import '../infrastructure/api/schedule_api.dart';
 import '../infrastructure/api/sync_api.dart';
+import '../infrastructure/audio/file_audio_recording_store.dart';
 import '../infrastructure/db/app_database.dart';
 import '../infrastructure/db/consent_store.dart';
 import '../infrastructure/db/local_board_store.dart';
@@ -23,12 +31,15 @@ import '../infrastructure/repositories/contacts_source.dart';
 import '../infrastructure/sync/sync_engine.dart';
 import '../infrastructure/voice/mock_voice_provider.dart';
 import '../infrastructure/ws/ws_call_events.dart';
+import '../infrastructure/ws/ws_live_audio.dart';
 import 'auth_controller.dart';
 import 'board_controller.dart';
 import 'call_controller.dart';
 import 'consent_controller.dart';
 import 'contacts_controller.dart';
 import 'manager_controller.dart';
+import 'recording_service.dart';
+import 'task_actions_controller.dart';
 
 /// Application wiring. Tests override these providers with fakes; feature code
 /// never constructs infrastructure directly.
@@ -57,6 +68,22 @@ final Provider<SyncStateStore> syncStateStoreProvider = Provider<SyncStateStore>
 
 final Provider<ConsentStore> consentStoreProvider =
     Provider<ConsentStore>((ref) => SqliteConsentStore(ref.watch(databaseProvider)));
+
+/// Local cache of the user's own recent recordings plus their upload state
+/// (plan.md §8 — a bounded cache, not a second system of record).
+final Provider<AudioRecordingStore> audioRecordingStoreProvider =
+    Provider<AudioRecordingStore>((ref) {
+  final database = ref.watch(databaseProvider);
+  return FileAudioRecordingStore(
+    database,
+    resolveDirectory: () async {
+      final base = await databaseFactory.getDatabasesPath();
+      final directory = Directory(p.join(base, 'audio'));
+      if (!await directory.exists()) await directory.create(recursive: true);
+      return directory.path;
+    },
+  );
+});
 
 // -- API clients -------------------------------------------------------------
 
@@ -96,6 +123,24 @@ final Provider<AgreementApi> agreementApiProvider = Provider<AgreementApi>(
   (ref) => HttpAgreementApi(client: ref.watch(apiClientProvider)),
 );
 
+/// Call summary / calendar / reminders / client-message drafts (plan.md §9).
+final Provider<ScheduleApi> scheduleApiProvider =
+    Provider<ScheduleApi>((ref) => HttpScheduleApi(client: ref.watch(apiClientProvider)));
+
+/// Resumable ingest of recorded audio (`POST /calls/{id}/audio`).
+final Provider<AudioIngestApi> audioIngestApiProvider = Provider<AudioIngestApi>(
+  (ref) => HttpAudioIngestApi(client: ref.watch(apiClientProvider)),
+);
+
+/// Live audio frames (`/api/ws/calls/{call_id}/audio`); best-effort.
+final Provider<LiveAudioPort> liveAudioProvider = Provider<LiveAudioPort>(
+  (ref) => WebSocketLiveAudio(
+    baseUrl: ref.watch(appConfigProvider).baseUrl,
+    accessToken: () async =>
+        (await ref.read(sessionStoreProvider).read())?.accessToken,
+  ),
+);
+
 /// Live per-call events (`/api/ws/calls/{call_id}`). The access token comes from
 /// the session store, exactly like the REST clients.
 final Provider<CallEventsPort> callEventsProvider = Provider<CallEventsPort>(
@@ -115,6 +160,31 @@ final Provider<MockVoiceCallProvider> mockVoiceCallProvider =
 
 final Provider<VoiceCallProvider> voiceCallProviderProvider =
     Provider<VoiceCallProvider>((ref) => ref.watch(mockVoiceCallProvider));
+
+/// Stage 6 recording coordinator (local buffer + live stream + resumable upload).
+final Provider<CallRecordingService> recordingServiceProvider =
+    Provider<CallRecordingService>(
+  (ref) => CallRecordingService(
+    recorder: ref.watch(voiceCallProviderProvider),
+    store: ref.watch(audioRecordingStoreProvider),
+    ingest: ref.watch(audioIngestApiProvider),
+    live: ref.watch(liveAudioProvider),
+  ),
+);
+
+/// Retries recordings that were buffered while offline as soon as a session
+/// exists (app start / next login). Read once by the authenticated area.
+final Provider<void> recordingRetryProvider = Provider<void>((ref) {
+  ref.listen<AsyncValue<AuthSession?>>(
+    authControllerProvider,
+    (_, next) {
+      if (next.valueOrNull != null) {
+        unawaited(ref.read(recordingServiceProvider).uploadPending());
+      }
+    },
+    fireImmediately: true,
+  );
+});
 
 final Provider<ContactsSource> contactsSourceProvider =
     Provider<ContactsSource>((ref) => const DeviceContactsSource());
@@ -152,3 +222,10 @@ final AsyncNotifierProvider<ConsentController, AppConsent> consentControllerProv
 /// watches this provider.
 final NotifierProvider<CallController, CallState?> callControllerProvider =
     NotifierProvider<CallController, CallState?>(CallController.new);
+
+/// Calendar / reminder / client-draft actions on the personal board (plan.md §9).
+final NotifierProvider<TaskActionsController, TaskActionsState>
+    taskActionsControllerProvider =
+    NotifierProvider<TaskActionsController, TaskActionsState>(
+  TaskActionsController.new,
+);

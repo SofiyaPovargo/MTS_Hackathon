@@ -9,6 +9,7 @@ import '../domain/ports.dart';
 import '../domain/ws_event.dart';
 import '../infrastructure/api/api_exception.dart';
 import 'providers.dart';
+import 'recording_service.dart';
 
 /// Drives the local call session: outgoing dialing, incoming answer/decline,
 /// lifecycle transitions and mute.
@@ -22,6 +23,8 @@ class CallController extends Notifier<CallState?> {
   CallApi get _api => ref.read(callApiProvider);
   CallEventsPort get _events => ref.read(callEventsProvider);
   AgreementApi get _agreements => ref.read(agreementApiProvider);
+  ScheduleApi get _schedule => ref.read(scheduleApiProvider);
+  CallRecordingService get _recording => ref.read(recordingServiceProvider);
 
   // ignore: cancel_subscriptions — cancelled in [_disconnectLive] / onDispose.
   StreamSubscription<CallEvent>? _liveSub;
@@ -126,8 +129,33 @@ class CallController extends Notifier<CallState?> {
 
   /// Clears the terminal state so the overlay closes.
   void clear() {
+    final callId = state?.callId;
+    if (callId != null) unawaited(_recording.finish(callId));
     _disconnectLive();
     state = null;
+  }
+
+  // ---- call summary (plan.md §9) -------------------------------------------
+
+  /// Loads the call's итог (`GET /calls/{id}/summary`) and stores it on the
+  /// [CallState]. Best-effort: it never throws, returning a user-facing message
+  /// only on a real failure (and `null` otherwise). Called automatically when
+  /// the call reaches a terminal status and from the live card's refresh.
+  Future<String?> loadSummary() async {
+    final callId = state?.callId;
+    if (callId == null) return null;
+    try {
+      final summary = await _schedule.callSummary(callId);
+      final current = state;
+      if (current != null && current.callId == callId) {
+        state = current.copyWith(callSummary: summary);
+      }
+      return null;
+    } on ApiException catch (error) {
+      return error.message;
+    } catch (_) {
+      return 'Не удалось загрузить итог звонка';
+    }
   }
 
   // ---- server-driven lifecycle updates ---------------------------------------
@@ -343,6 +371,12 @@ class CallController extends Notifier<CallState?> {
       if (!canTransitionCall(current.status, target)) return;
     }
     state = current.copyWith(status: target, endedAt: DateTime.now());
+    if (current.callId != null) {
+      unawaited(_recording.finish(current.callId!));
+      // The summary becomes available once the call is terminal; load it in the
+      // background. [loadSummary] never throws, so an offline failure is silent.
+      unawaited(loadSummary());
+    }
     _disconnectLive();
   }
 
@@ -356,5 +390,17 @@ class CallController extends Notifier<CallState?> {
       answeredAt: target == CallLifecycleStatus.answered ? now : null,
       endedAt: target.isTerminal ? now : null,
     );
+    if (target == CallLifecycleStatus.recording) _maybeStartRecording();
+  }
+
+  /// Starts buffering the call's audio once consent is granted (`recording`).
+  /// The recording is always saved; see [CallRecordingService].
+  void _maybeStartRecording() {
+    final current = state;
+    if (current == null || !current.recordingEnabled) return;
+    final callId = current.callId;
+    final externalId = current.externalId;
+    if (callId == null || externalId == null) return;
+    unawaited(_recording.start(callId, externalId: externalId));
   }
 }
