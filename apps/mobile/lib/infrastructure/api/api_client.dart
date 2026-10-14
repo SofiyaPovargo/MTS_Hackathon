@@ -45,6 +45,27 @@ class ApiClient {
   Future<Object?> delete(String path, {bool auth = true}) =>
       _send('DELETE', path, auth: auth);
 
+  /// Uploads raw bytes (call audio) with an explicit content type. The body is
+  /// sent as-is — never JSON-encoded — so `Content-Range` resumable chunks and
+  /// binary audio survive the round-trip.
+  Future<Object?> postBytes(
+    String path, {
+    required List<int> bytes,
+    required String contentType,
+    Map<String, Object?>? query,
+    Map<String, String>? extraHeaders,
+    bool auth = true,
+  }) =>
+      _send(
+        'POST',
+        path,
+        body: bytes,
+        query: query,
+        auth: auth,
+        contentType: contentType,
+        extraHeaders: extraHeaders,
+      );
+
   Future<Object?> _send(
     String method,
     String path, {
@@ -52,10 +73,17 @@ class ApiClient {
     Map<String, Object?>? query,
     bool auth = true,
     bool retried = false,
+    String? contentType,
+    Map<String, String>? extraHeaders,
   }) async {
     try {
       final headers = await _headers(auth);
-      if (body != null) headers['Content-Type'] = 'application/json';
+      if (contentType != null) {
+        headers['Content-Type'] = contentType;
+      } else if (body != null) {
+        headers['Content-Type'] = 'application/json';
+      }
+      if (extraHeaders != null) headers.addAll(extraHeaders);
       final response = await _dio.request<Object?>(
         path,
         data: body,
@@ -68,7 +96,16 @@ class ApiClient {
       if (auth && status == 401 && !retried && _refreshToken != null) {
         final renewed = await _refreshToken();
         if (renewed != null) {
-          return _send(method, path, body: body, query: query, auth: auth, retried: true);
+          return _send(
+            method,
+            path,
+            body: body,
+            query: query,
+            auth: auth,
+            retried: true,
+            contentType: contentType,
+            extraHeaders: extraHeaders,
+          );
         }
         throw const ApiException(ApiErrorKind.sessionExpired, 'Session expired', statusCode: 401);
       }

@@ -9,6 +9,7 @@ import '../domain/ports.dart';
 import '../domain/ws_event.dart';
 import '../infrastructure/api/api_exception.dart';
 import 'providers.dart';
+import 'recording_service.dart';
 
 /// Drives the local call session: outgoing dialing, incoming answer/decline,
 /// lifecycle transitions and mute.
@@ -22,6 +23,7 @@ class CallController extends Notifier<CallState?> {
   CallApi get _api => ref.read(callApiProvider);
   CallEventsPort get _events => ref.read(callEventsProvider);
   AgreementApi get _agreements => ref.read(agreementApiProvider);
+  CallRecordingService get _recording => ref.read(recordingServiceProvider);
 
   // ignore: cancel_subscriptions — cancelled in [_disconnectLive] / onDispose.
   StreamSubscription<CallEvent>? _liveSub;
@@ -126,6 +128,8 @@ class CallController extends Notifier<CallState?> {
 
   /// Clears the terminal state so the overlay closes.
   void clear() {
+    final callId = state?.callId;
+    if (callId != null) unawaited(_recording.finish(callId));
     _disconnectLive();
     state = null;
   }
@@ -343,6 +347,7 @@ class CallController extends Notifier<CallState?> {
       if (!canTransitionCall(current.status, target)) return;
     }
     state = current.copyWith(status: target, endedAt: DateTime.now());
+    if (current.callId != null) unawaited(_recording.finish(current.callId!));
     _disconnectLive();
   }
 
@@ -356,5 +361,17 @@ class CallController extends Notifier<CallState?> {
       answeredAt: target == CallLifecycleStatus.answered ? now : null,
       endedAt: target.isTerminal ? now : null,
     );
+    if (target == CallLifecycleStatus.recording) _maybeStartRecording();
+  }
+
+  /// Starts buffering the call's audio once consent is granted (`recording`).
+  /// The recording is always saved; see [CallRecordingService].
+  void _maybeStartRecording() {
+    final current = state;
+    if (current == null || !current.recordingEnabled) return;
+    final callId = current.callId;
+    final externalId = current.externalId;
+    if (callId == null || externalId == null) return;
+    unawaited(_recording.start(callId, externalId: externalId));
   }
 }

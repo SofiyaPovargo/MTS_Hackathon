@@ -32,6 +32,8 @@ class HomeGate extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
+    // Retries offline-buffered recordings once a session is available.
+    ref.watch(recordingRetryProvider);
     final session = ref.watch(authControllerProvider);
     return session.when(
       data: (value) => value == null ? const LoginScreen() : const AuthedGate(),

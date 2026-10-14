@@ -3,6 +3,7 @@
 /// No Flutter/plugin imports here — keeps the domain layer testable.
 library;
 
+import 'audio.dart';
 import 'call.dart';
 import 'consent.dart';
 import 'enums.dart';
@@ -133,6 +134,12 @@ abstract class VoiceCallProvider {
   Future<void> hangup(String externalId);
 
   Future<void> setMuted(String externalId, bool muted);
+
+  /// Opens the recorded (mixed) media stream for [externalId] once recording is
+  /// enabled. Bytes are encoded chunks in the provider's format (the MTS Exolve
+  /// mobile SDK mix). Real adapters hide the platform capture; the mock emits
+  /// synthetic chunks for local development. Ending the stream stops capture.
+  Stream<List<int>> openMediaStream(String externalId);
 }
 
 /// Optional dev capability: synthesizes an incoming call without a real
@@ -199,4 +206,68 @@ abstract class AgreementApi {
   Future<Agreement> confirm(String agreementId);
 
   Future<Agreement> reject(String agreementId);
+}
+
+/// Local storage of recorded audio: a bounded cache of the user's own recent
+/// calls plus the upload state of each recording (plan.md §8, Stage 6). Audio
+/// bytes live in a file; metadata/status lives in the local DB.
+abstract class AudioRecordingStore {
+  /// Creates (or resets) the recording for [callId] and returns it.
+  Future<CallRecording> begin(
+    String callId, {
+    String contentType,
+    Duration? keepFor,
+  });
+
+  /// Appends captured bytes and returns the updated recording.
+  Future<CallRecording> append(String callId, List<int> bytes);
+
+  Future<CallRecording?> get(String callId);
+
+  /// Bytes from [offset] to the end of the file (for a resumed upload).
+  Future<List<int>> readFrom(String callId, int offset);
+
+  /// Records the server-confirmed offset; [complete] clears the pending state.
+  Future<void> markUploaded(
+    String callId, {
+    required int uploadedBytes,
+    required bool complete,
+  });
+
+  Future<void> setStatus(String callId, RecordingUploadStatus status);
+
+  /// Recordings that still need to be uploaded (offline / dropped network).
+  Future<List<CallRecording>> pending();
+
+  Future<void> delete(String callId);
+
+  /// Drops uploaded recordings past their retention / above [maxRecordings]
+  /// (keeps the local cache bounded).
+  Future<void> enforceRetention({int maxRecordings});
+}
+
+/// Resumable ingest of a recording (`POST /calls/{id}/audio`).
+///
+/// With [start]/[total] the request carries `Content-Range` and is one chunk of
+/// a resumable upload; the returned offset is the durable byte count, so a
+/// reconnect resumes exactly there (plan.md §13).
+abstract class AudioIngestApi {
+  Future<AudioIngestResult> upload({
+    required String callId,
+    required List<int> bytes,
+    int? start,
+    int? total,
+    String? contentType,
+    int? durationSec,
+  });
+}
+
+/// Live audio frames (`WS /ws/calls/{id}/audio`), used for real-time analysis
+/// while online. Best-effort: a failure must never lose already-recorded audio.
+abstract class LiveAudioPort {
+  Future<void> connect(String callId);
+
+  Future<void> send(List<int> frame);
+
+  Future<void> close();
 }
