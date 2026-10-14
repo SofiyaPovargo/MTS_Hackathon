@@ -97,7 +97,7 @@ void main() {
     expect(find.text('Отклонить'), findsOneWidget);
   });
 
-  testWidgets('confirm flips the card to a final confirmed state',
+  testWidgets('confirm flips the card to confirmed but keeps it editable',
       (tester) async {
     final scope = setup();
     addTearDown(scope.container.dispose);
@@ -120,8 +120,65 @@ void main() {
     // The local card reflects the confirmed server state (task was created).
     expect(scope.agreementApi.stored['created-1']?.status, AgreementStatus.confirmed);
     expect(find.text('Подтверждено'), findsOneWidget);
+    // Confirming is done; the card is not frozen (§12–14) — it can still be
+    // edited or rejected.
+    expect(find.text('Подтвердить'), findsNothing);
+    expect(find.text('Отклонить'), findsOneWidget);
+    expect(find.byTooltip('Изменить'), findsOneWidget);
+  });
+
+  testWidgets('a confirmed agreement can still be edited', (tester) async {
+    final scope = setup();
+    addTearDown(scope.container.dispose);
+    final controller = scope.container.read(callControllerProvider.notifier);
+
+    await pumpOverlay(tester, scope);
+    await controller.startOutgoing('+79000000002');
+    scope.voice.emit(const CallSignal(kind: CallSignalKind.answered));
+    await tester.pumpAndSettle();
+
+    await controller.createManualAgreement(
+      const AgreementPatch(title: 'Оплатить счёт', type: 'payment'),
+    );
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Подтвердить'));
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.byTooltip('Изменить'));
+    await tester.pumpAndSettle();
+    await tester.enterText(find.byType(TextField).first, 'Оплатить до 20-го');
+    await tester.tap(find.text('Сохранить'));
+    await tester.pumpAndSettle();
+
+    // The edit lands on the server and the card stays confirmed.
+    expect(scope.agreementApi.stored['created-1']?.title, 'Оплатить до 20-го');
+    expect(scope.agreementApi.stored['created-1']?.status, AgreementStatus.confirmed);
+    expect(find.text('Оплатить до 20-го'), findsOneWidget);
+    expect(find.text('Подтверждено'), findsOneWidget);
+  });
+
+  testWidgets('a rejected agreement is final — no actions remain',
+      (tester) async {
+    final scope = setup();
+    addTearDown(scope.container.dispose);
+    final controller = scope.container.read(callControllerProvider.notifier);
+
+    await pumpOverlay(tester, scope);
+    await controller.startOutgoing('+79000000002');
+    scope.voice.emit(const CallSignal(kind: CallSignalKind.answered));
+    await tester.pumpAndSettle();
+
+    await controller.createManualAgreement(
+      const AgreementPatch(title: 'Оплатить счёт', type: 'payment'),
+    );
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Отклонить'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Отклонено'), findsOneWidget);
     expect(find.text('Подтвердить'), findsNothing);
     expect(find.text('Отклонить'), findsNothing);
+    expect(find.byTooltip('Изменить'), findsNothing);
   });
 
   testWidgets('live transcript and agreement_detected render on the card',

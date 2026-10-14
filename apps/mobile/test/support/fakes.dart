@@ -43,12 +43,16 @@ TaskItem testTask({
   TaskStatus status = TaskStatus.newTask,
   TaskPriority priority = TaskPriority.medium,
   DateTime? dueDate,
+  String? description,
+  String? agreementId,
   int version = 1,
 }) {
   return TaskItem(
     id: id,
     title: title,
+    description: description,
     assigneeUserId: '11111111-1111-1111-1111-111111111111',
+    agreementId: agreementId,
     priority: priority,
     status: status,
     dueDate: dueDate,
@@ -58,7 +62,49 @@ TaskItem testTask({
   );
 }
 
-Agreement testAgreement({String id = '33333333-3333-3333-3333-333333333333', int version = 1}) {
+TeamMember testMember({
+  String id = '11111111-1111-1111-1111-111111111111',
+  String phone = '+79000000002',
+  String fullName = 'Анна',
+  Role role = Role.user,
+}) {
+  return TeamMember(id: id, phone: phone, fullName: fullName, role: role);
+}
+
+TeamStats testStats({
+  int membersCount = 2,
+  int agreementsTotal = 3,
+  int tasksTotal = 5,
+  Map<String, int> tasksByStatus = const <String, int>{
+    'new': 2,
+    'done': 2,
+    'overdue': 1,
+  },
+  int overdue = 1,
+  int doneOnTime = 2,
+  double doneOnTimePercent = 100,
+  double? avgCloseHours = 12.5,
+  double tasksFromCallsPercent = 80,
+  List<MemberStats> memberStats = const <MemberStats>[],
+}) {
+  return TeamStats(
+    membersCount: membersCount,
+    agreementsTotal: agreementsTotal,
+    tasksTotal: tasksTotal,
+    tasksByStatus: tasksByStatus,
+    overdue: overdue,
+    doneOnTime: doneOnTime,
+    doneOnTimePercent: doneOnTimePercent,
+    avgCloseHours: avgCloseHours,
+    tasksFromCallsPercent: tasksFromCallsPercent,
+    memberStats: memberStats,
+  );
+}
+
+Agreement testAgreement({
+  String id = '33333333-3333-3333-3333-333333333333',
+  int version = 1,
+}) {
   return Agreement(
     id: id,
     callId: '44444444-4444-4444-4444-444444444444',
@@ -166,7 +212,10 @@ class FakeAuthApi implements AuthApi {
 }
 
 class FakeBoardApi implements BoardApi {
-  FakeBoardApi({this.tasks = const <TaskItem>[], this.agreements = const <Agreement>[]});
+  FakeBoardApi({
+    this.tasks = const <TaskItem>[],
+    this.agreements = const <Agreement>[],
+  });
 
   List<TaskItem> tasks;
   List<Agreement> agreements;
@@ -176,6 +225,66 @@ class FakeBoardApi implements BoardApi {
 
   @override
   Future<List<Agreement>> fetchMyAgreements() async => agreements;
+}
+
+/// Controllable [ManagerApi]: records the filter arguments and returns canned
+/// team data, so the controller and board can be tested without a server.
+class FakeManagerApi implements ManagerApi {
+  FakeManagerApi({
+    this.tasks = const <TaskItem>[],
+    TeamStats? stats,
+    this.members = const <TeamMember>[],
+    this.error,
+  }) : stats = stats ?? testStats();
+
+  List<TaskItem> tasks;
+  TeamStats stats;
+  List<TeamMember> members;
+  ApiException? error;
+
+  String? lastUserId;
+  String? lastStatus;
+  String? lastPriority;
+  String? lastTaskType;
+  DateTime? lastDueBefore;
+  int taskCalls = 0;
+  int statsCalls = 0;
+  int memberCalls = 0;
+
+  @override
+  Future<List<TaskItem>> fetchTeamTasks({
+    String? userId,
+    String? status,
+    String? priority,
+    String? taskType,
+    DateTime? dueBefore,
+  }) async {
+    taskCalls++;
+    lastUserId = userId;
+    lastStatus = status;
+    lastPriority = priority;
+    lastTaskType = taskType;
+    lastDueBefore = dueBefore;
+    final failure = error;
+    if (failure != null) throw failure;
+    return tasks;
+  }
+
+  @override
+  Future<TeamStats> fetchTeamStats() async {
+    statsCalls++;
+    final failure = error;
+    if (failure != null) throw failure;
+    return stats;
+  }
+
+  @override
+  Future<List<TeamMember>> fetchTeamMembers() async {
+    memberCalls++;
+    final failure = error;
+    if (failure != null) throw failure;
+    return members;
+  }
 }
 
 class FakeSyncApi implements SyncApi {
@@ -280,20 +389,25 @@ class InMemorySyncStateStore implements SyncStateStore {
   Future<String?> readSyncToken() async => token;
 
   @override
-  Future<void> writeSyncToken(String value) async => token = value.isEmpty ? null : value;
+  Future<void> writeSyncToken(String value) async =>
+      token = value.isEmpty ? null : value;
 
   @override
   Future<int> readRecordVersion(String entityType, String id) async =>
       versions['$entityType:$id'] ?? 0;
 
   @override
-  Future<void> writeRecordVersion(String entityType, String id, int version) async =>
-      versions['$entityType:$id'] = version;
+  Future<void> writeRecordVersion(
+    String entityType,
+    String id,
+    int version,
+  ) async => versions['$entityType:$id'] = version;
 }
 
 /// Controllable [VoiceCallProvider]: records control calls and lets tests emit
 /// provider signals explicitly (no timers, no platform channels).
-class FakeVoiceCallProvider implements VoiceCallProvider, IncomingCallSimulator {
+class FakeVoiceCallProvider
+    implements VoiceCallProvider, IncomingCallSimulator {
   FakeVoiceCallProvider({this.microphoneGranted = true});
 
   bool microphoneGranted;
@@ -337,16 +451,19 @@ class FakeVoiceCallProvider implements VoiceCallProvider, IncomingCallSimulator 
   }
 
   @override
-  Future<void> setMuted(String externalId, bool value) async => muted.add(value);
+  Future<void> setMuted(String externalId, bool value) async =>
+      muted.add(value);
 
   @override
   void simulateIncoming({required String phone, String? name}) {
-    emit(CallSignal(
-      kind: CallSignalKind.incoming,
-      externalId: 'fake-${++_sequence}',
-      phone: phone,
-      name: name,
-    ));
+    emit(
+      CallSignal(
+        kind: CallSignalKind.incoming,
+        externalId: 'fake-${++_sequence}',
+        phone: phone,
+        name: name,
+      ),
+    );
   }
 
   void emit(CallSignal signal) {

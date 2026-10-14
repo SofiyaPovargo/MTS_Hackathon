@@ -349,8 +349,9 @@ class _LiveCard extends StatelessWidget {
   }
 }
 
-/// One detected agreement with confirm/reject/edit actions. After confirm the
-/// server creates the task; both confirm and reject are final.
+/// One detected agreement with confirm/reject/edit actions. Confirming creates
+/// the task on the server; a `confirmed` agreement stays editable (§12–14: the
+/// card is not frozen) and only `rejected` is final.
 class _AgreementCard extends StatelessWidget {
   const _AgreementCard({required this.agreement, required this.controller});
 
@@ -362,7 +363,9 @@ class _AgreementCard extends StatelessWidget {
     final theme = Theme.of(context);
     final confirmed = agreement.status == AgreementStatus.confirmed;
     final rejected = agreement.status == AgreementStatus.rejected;
-    final editable = !confirmed && !rejected;
+    // Only `rejected` is final; a confirmed agreement can still be edited or
+    // rejected. "Подтвердить" makes no sense once it is already confirmed.
+    final canConfirm = !confirmed && !rejected;
     return Card(
       child: Padding(
         padding: const EdgeInsets.all(12),
@@ -407,18 +410,25 @@ class _AgreementCard extends StatelessWidget {
             const SizedBox(height: 8),
             Row(
               children: <Widget>[
+                if (confirmed) ...<Widget>[
+                  const Icon(Icons.check_circle, size: 16, color: Colors.green),
+                  const SizedBox(width: 4),
+                ],
                 Expanded(
                   child: Text(
                     agreementStatusLabel(agreement.status),
                     style: theme.textTheme.labelMedium,
                   ),
                 ),
-                if (editable) ...<Widget>[
-                  TextButton(
-                    onPressed: () =>
-                        _run(context, () => controller.confirmAgreement(agreement.id)),
-                    child: const Text('Подтвердить'),
-                  ),
+                if (rejected)
+                  Icon(Icons.block, size: 20, color: theme.colorScheme.outline)
+                else ...<Widget>[
+                  if (canConfirm)
+                    TextButton(
+                      onPressed: () => _run(
+                          context, () => controller.confirmAgreement(agreement.id)),
+                      child: const Text('Подтвердить'),
+                    ),
                   TextButton(
                     onPressed: () =>
                         _run(context, () => controller.rejectAgreement(agreement.id)),
@@ -429,12 +439,7 @@ class _AgreementCard extends StatelessWidget {
                     tooltip: 'Изменить',
                     onPressed: () => _edit(context),
                   ),
-                ] else
-                  Icon(
-                    confirmed ? Icons.check_circle : Icons.block,
-                    size: 20,
-                    color: confirmed ? Colors.green : theme.colorScheme.outline,
-                  ),
+                ],
               ],
             ),
           ],

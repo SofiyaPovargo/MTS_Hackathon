@@ -58,6 +58,76 @@ void main() {
       expect(restored.dueDate, DateTime(2026, 10, 15));
       expect(restored.version, 2);
     });
+
+    test('parses the richer ManagerTaskOut card fields', () {
+      final task = TaskItem.fromJson(<String, dynamic>{
+        'id': 't1',
+        'title': 'Позвонить клиенту',
+        'assignee_user_id': 'u1',
+        'assignee_name': 'Анна',
+        'agreement_id': 'a1',
+        'agreement_type': 'payment',
+        'call_id': 'c1',
+        'contact_name': 'ООО Ромашка',
+        'contact_phone': '+79000000009',
+        'priority': 'high',
+        'status': 'new',
+        'version': 1,
+      });
+      expect(task.assigneeName, 'Анна');
+      expect(task.agreementType, 'payment');
+      expect(task.callId, 'c1');
+      expect(task.contactName, 'ООО Ромашка');
+      expect(task.contactPhone, '+79000000009');
+    });
+  });
+
+  group('TeamStats', () {
+    test('parses the per-employee breakdown when present', () {
+      final stats = TeamStats.fromJson(<String, dynamic>{
+        'members_count': 2,
+        'agreements_total': 4,
+        'tasks_total': 5,
+        'tasks_by_status': <String, dynamic>{'new': 3, 'done': 2},
+        'overdue': 1,
+        'done_on_time': 2,
+        'done_on_time_percent': 100.0,
+        'avg_close_hours': 12.5,
+        'tasks_from_calls_percent': 80.0,
+        'members': <dynamic>[
+          <String, dynamic>{
+            'user_id': 'u1',
+            'full_name': 'Анна',
+            'agreements_total': 2,
+            'tasks_total': 3,
+            'tasks_by_status': <String, dynamic>{'new': 2, 'done': 1},
+            'overdue': 0,
+            'done_on_time': 1,
+            'done_on_time_percent': 100.0,
+            'avg_close_hours': 5.0,
+            'tasks_from_calls_percent': 66.0,
+          },
+        ],
+      });
+      expect(stats.agreementsTotal, 4);
+      expect(stats.memberStats, hasLength(1));
+      expect(stats.memberStats.single.fullName, 'Анна');
+      expect(stats.memberStats.single.tasksTotal, 3);
+    });
+
+    test('tolerates a payload without the breakdown (older backend)', () {
+      final stats = TeamStats.fromJson(<String, dynamic>{
+        'members_count': 1,
+        'tasks_total': 2,
+        'tasks_by_status': <String, dynamic>{'new': 2},
+        'overdue': 0,
+        'done_on_time': 0,
+        'done_on_time_percent': 0.0,
+        'tasks_from_calls_percent': 0.0,
+      });
+      expect(stats.agreementsTotal, 0);
+      expect(stats.memberStats, isEmpty);
+    });
   });
 
   group('Agreement', () {

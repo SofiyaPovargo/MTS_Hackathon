@@ -29,13 +29,13 @@ class UserProfile {
   });
 
   factory UserProfile.fromJson(Map<String, dynamic> json) => UserProfile(
-        id: json['id'] as String,
-        phone: json['phone'] as String,
-        fullName: json['full_name'] as String,
-        role: Role.fromWire(json['role'] as String),
-        teamId: json['team_id'] as String?,
-        timezone: json['timezone'] as String,
-      );
+    id: json['id'] as String,
+    phone: json['phone'] as String,
+    fullName: json['full_name'] as String,
+    role: Role.fromWire(json['role'] as String),
+    teamId: json['team_id'] as String?,
+    timezone: json['timezone'] as String,
+  );
 
   final String id;
   final String phone;
@@ -54,18 +54,18 @@ class AuthSession {
   });
 
   factory AuthSession.fromJson(Map<String, dynamic> json) => AuthSession(
-        accessToken: json['access_token'] as String,
-        refreshToken: json['refresh_token'] as String,
-        expiresIn: (json['expires_in'] as num).toInt(),
-        user: UserProfile.fromJson(json['user'] as Map<String, dynamic>),
-      );
+    accessToken: json['access_token'] as String,
+    refreshToken: json['refresh_token'] as String,
+    expiresIn: (json['expires_in'] as num).toInt(),
+    user: UserProfile.fromJson(json['user'] as Map<String, dynamic>),
+  );
 
   factory AuthSession.fromStored(Map<String, dynamic> json) => AuthSession(
-        accessToken: json['access_token'] as String,
-        refreshToken: json['refresh_token'] as String,
-        expiresIn: (json['expires_in'] as num?)?.toInt() ?? 0,
-        user: UserProfile.fromJson(json['user'] as Map<String, dynamic>),
-      );
+    accessToken: json['access_token'] as String,
+    refreshToken: json['refresh_token'] as String,
+    expiresIn: (json['expires_in'] as num?)?.toInt() ?? 0,
+    user: UserProfile.fromJson(json['user'] as Map<String, dynamic>),
+  );
 
   final String accessToken;
   final String refreshToken;
@@ -73,18 +73,18 @@ class AuthSession {
   final UserProfile user;
 
   Map<String, dynamic> toJson() => {
-        'access_token': accessToken,
-        'refresh_token': refreshToken,
-        'expires_in': expiresIn,
-        'user': {
-          'id': user.id,
-          'phone': user.phone,
-          'full_name': user.fullName,
-          'role': user.role.wire,
-          'team_id': user.teamId,
-          'timezone': user.timezone,
-        },
-      };
+    'access_token': accessToken,
+    'refresh_token': refreshToken,
+    'expires_in': expiresIn,
+    'user': {
+      'id': user.id,
+      'phone': user.phone,
+      'full_name': user.fullName,
+      'role': user.role.wire,
+      'team_id': user.teamId,
+      'timezone': user.timezone,
+    },
+  };
 }
 
 class TaskItem {
@@ -93,7 +93,12 @@ class TaskItem {
     required this.title,
     this.description,
     required this.assigneeUserId,
+    this.assigneeName,
     this.agreementId,
+    this.agreementType,
+    this.callId,
+    this.contactName,
+    this.contactPhone,
     required this.priority,
     required this.status,
     this.dueDate,
@@ -105,26 +110,39 @@ class TaskItem {
   });
 
   factory TaskItem.fromJson(Map<String, dynamic> json) => TaskItem(
-        id: json['id'] as String,
-        title: json['title'] as String,
-        description: json['description'] as String?,
-        assigneeUserId: json['assignee_user_id'] as String,
-        agreementId: json['agreement_id'] as String?,
-        priority: TaskPriority.fromWire(json['priority'] as String),
-        status: TaskStatus.fromWire(json['status'] as String),
-        dueDate: parseDate(json['due_date'] as String?),
-        dueTime: json['due_time'] as String?,
-        completedAt: parseDate(json['completed_at'] as String?),
-        version: (json['version'] as num?)?.toInt() ?? 0,
-        createdAt: parseDate(json['created_at'] as String?),
-        updatedAt: parseDate(json['updated_at'] as String?),
-      );
+    id: json['id'] as String,
+    title: json['title'] as String,
+    description: json['description'] as String?,
+    assigneeUserId: json['assignee_user_id'] as String,
+    assigneeName: json['assignee_name'] as String?,
+    agreementId: json['agreement_id'] as String?,
+    agreementType: json['agreement_type'] as String?,
+    callId: json['call_id'] as String?,
+    contactName: json['contact_name'] as String?,
+    contactPhone: json['contact_phone'] as String?,
+    priority: TaskPriority.fromWire(json['priority'] as String),
+    status: TaskStatus.fromWire(json['status'] as String),
+    dueDate: parseDate(json['due_date'] as String?),
+    dueTime: json['due_time'] as String?,
+    completedAt: parseDate(json['completed_at'] as String?),
+    version: (json['version'] as num?)?.toInt() ?? 0,
+    createdAt: parseDate(json['created_at'] as String?),
+    updatedAt: parseDate(json['updated_at'] as String?),
+  );
 
   final String id;
   final String title;
   final String? description;
   final String assigneeUserId;
+
+  /// Present on the manager board (`ManagerTaskOut`); `null` elsewhere.
+  final String? assigneeName;
+
   final String? agreementId;
+  final String? agreementType;
+  final String? callId;
+  final String? contactName;
+  final String? contactPhone;
   final TaskPriority priority;
   final TaskStatus status;
   final DateTime? dueDate;
@@ -134,21 +152,217 @@ class TaskItem {
   final DateTime? createdAt;
   final DateTime? updatedAt;
 
+  /// Serializes for the local cache. Manager-only card fields
+  /// (`assignee_name`, `agreement_type`, `call_id`, `contact_name`,
+  /// `contact_phone`) are omitted on purpose: the phone caches only the user's
+  /// own data, and these fields only appear on the manager board.
   Map<String, dynamic> toJson() => {
-        'id': id,
-        'title': title,
-        'description': description,
-        'assignee_user_id': assigneeUserId,
-        'agreement_id': agreementId,
-        'priority': priority.wire,
-        'status': status.wire,
-        'due_date': formatDateOnly(dueDate),
-        'due_time': dueTime,
-        'completed_at': completedAt?.toIso8601String(),
-        'version': version,
-        'created_at': createdAt?.toIso8601String(),
-        'updated_at': updatedAt?.toIso8601String(),
-      };
+    'id': id,
+    'title': title,
+    'description': description,
+    'assignee_user_id': assigneeUserId,
+    'agreement_id': agreementId,
+    'priority': priority.wire,
+    'status': status.wire,
+    'due_date': formatDateOnly(dueDate),
+    'due_time': dueTime,
+    'completed_at': completedAt?.toIso8601String(),
+    'version': version,
+    'created_at': createdAt?.toIso8601String(),
+    'updated_at': updatedAt?.toIso8601String(),
+  };
+
+  TaskItem copyWith({
+    String? title,
+    String? description,
+    String? assigneeUserId,
+    String? assigneeName,
+    String? agreementId,
+    String? agreementType,
+    String? callId,
+    String? contactName,
+    String? contactPhone,
+    TaskPriority? priority,
+    TaskStatus? status,
+    DateTime? dueDate,
+    String? dueTime,
+    DateTime? completedAt,
+    int? version,
+    DateTime? createdAt,
+    DateTime? updatedAt,
+  }) {
+    return TaskItem(
+      id: id,
+      title: title ?? this.title,
+      description: description ?? this.description,
+      assigneeUserId: assigneeUserId ?? this.assigneeUserId,
+      assigneeName: assigneeName ?? this.assigneeName,
+      agreementId: agreementId ?? this.agreementId,
+      agreementType: agreementType ?? this.agreementType,
+      callId: callId ?? this.callId,
+      contactName: contactName ?? this.contactName,
+      contactPhone: contactPhone ?? this.contactPhone,
+      priority: priority ?? this.priority,
+      status: status ?? this.status,
+      dueDate: dueDate ?? this.dueDate,
+      dueTime: dueTime ?? this.dueTime,
+      completedAt: completedAt ?? this.completedAt,
+      version: version ?? this.version,
+      createdAt: createdAt ?? this.createdAt,
+      updatedAt: updatedAt ?? this.updatedAt,
+    );
+  }
+}
+
+/// Editable task fields (`PATCH /tasks/{id}` / `/sync` push payload). `null`
+/// means "not provided" — the server only applies present fields.
+class TaskPatch {
+  const TaskPatch({
+    this.title,
+    this.description,
+    this.dueDate,
+    this.dueTime,
+    this.priority,
+    this.status,
+  });
+
+  final String? title;
+  final String? description;
+  final DateTime? dueDate;
+  final String? dueTime;
+  final TaskPriority? priority;
+  final TaskStatus? status;
+
+  Map<String, Object?> toJson() => <String, Object?>{
+    if (title != null) 'title': title,
+    if (description != null) 'description': description,
+    if (dueDate != null) 'due_date': formatDateOnly(dueDate),
+    if (dueTime != null) 'due_time': dueTime,
+    if (priority != null) 'priority': priority!.wire,
+    if (status != null) 'status': status!.wire,
+  };
+}
+
+/// A team member of the manager's team (`/manager/team/members`).
+class TeamMember {
+  const TeamMember({
+    required this.id,
+    required this.phone,
+    required this.fullName,
+    required this.role,
+  });
+
+  factory TeamMember.fromJson(Map<String, dynamic> json) => TeamMember(
+    id: json['id'] as String,
+    phone: json['phone'] as String,
+    fullName: json['full_name'] as String,
+    role: Role.fromWire(json['role'] as String),
+  );
+
+  final String id;
+  final String phone;
+  final String fullName;
+  final Role role;
+}
+
+/// Team analytics (`/manager/team/stats`). `memberStats`/`agreementsTotal` are
+/// only present once the backend Stage 8 branch lands; parsing tolerates their
+/// absence.
+class TeamStats {
+  const TeamStats({
+    required this.membersCount,
+    this.agreementsTotal = 0,
+    required this.tasksTotal,
+    required this.tasksByStatus,
+    required this.overdue,
+    required this.doneOnTime,
+    required this.doneOnTimePercent,
+    this.avgCloseHours,
+    required this.tasksFromCallsPercent,
+    this.memberStats = const <MemberStats>[],
+  });
+
+  factory TeamStats.fromJson(Map<String, dynamic> json) => TeamStats(
+    membersCount: (json['members_count'] as num?)?.toInt() ?? 0,
+    agreementsTotal: (json['agreements_total'] as num?)?.toInt() ?? 0,
+    tasksTotal: (json['tasks_total'] as num?)?.toInt() ?? 0,
+    tasksByStatus: <String, int>{
+      for (final entry
+          in (json['tasks_by_status'] as Map<String, dynamic>? ?? const {})
+              .entries)
+        entry.key: (entry.value as num).toInt(),
+    },
+    overdue: (json['overdue'] as num?)?.toInt() ?? 0,
+    doneOnTime: (json['done_on_time'] as num?)?.toInt() ?? 0,
+    doneOnTimePercent: (json['done_on_time_percent'] as num?)?.toDouble() ?? 0,
+    avgCloseHours: (json['avg_close_hours'] as num?)?.toDouble(),
+    tasksFromCallsPercent:
+        (json['tasks_from_calls_percent'] as num?)?.toDouble() ?? 0,
+    memberStats: <MemberStats>[
+      for (final raw
+          in (json['members'] as List<dynamic>? ?? const <dynamic>[]))
+        MemberStats.fromJson(raw as Map<String, dynamic>),
+    ],
+  );
+
+  final int membersCount;
+  final int agreementsTotal;
+  final int tasksTotal;
+  final Map<String, int> tasksByStatus;
+  final int overdue;
+  final int doneOnTime;
+  final double doneOnTimePercent;
+  final double? avgCloseHours;
+  final double tasksFromCallsPercent;
+  final List<MemberStats> memberStats;
+
+  int statusCount(TaskStatus status) => tasksByStatus[status.wire] ?? 0;
+}
+
+/// Per-employee analytics (`MemberStatsOut`, `/manager/team/stats`).
+class MemberStats {
+  const MemberStats({
+    required this.userId,
+    required this.fullName,
+    required this.agreementsTotal,
+    required this.tasksTotal,
+    required this.tasksByStatus,
+    required this.overdue,
+    required this.doneOnTime,
+    required this.doneOnTimePercent,
+    this.avgCloseHours,
+    required this.tasksFromCallsPercent,
+  });
+
+  factory MemberStats.fromJson(Map<String, dynamic> json) => MemberStats(
+    userId: json['user_id'] as String,
+    fullName: json['full_name'] as String,
+    agreementsTotal: (json['agreements_total'] as num?)?.toInt() ?? 0,
+    tasksTotal: (json['tasks_total'] as num?)?.toInt() ?? 0,
+    tasksByStatus: <String, int>{
+      for (final entry
+          in (json['tasks_by_status'] as Map<String, dynamic>? ?? const {})
+              .entries)
+        entry.key: (entry.value as num).toInt(),
+    },
+    overdue: (json['overdue'] as num?)?.toInt() ?? 0,
+    doneOnTime: (json['done_on_time'] as num?)?.toInt() ?? 0,
+    doneOnTimePercent: (json['done_on_time_percent'] as num?)?.toDouble() ?? 0,
+    avgCloseHours: (json['avg_close_hours'] as num?)?.toDouble(),
+    tasksFromCallsPercent:
+        (json['tasks_from_calls_percent'] as num?)?.toDouble() ?? 0,
+  );
+
+  final String userId;
+  final String fullName;
+  final int agreementsTotal;
+  final int tasksTotal;
+  final Map<String, int> tasksByStatus;
+  final int overdue;
+  final int doneOnTime;
+  final double doneOnTimePercent;
+  final double? avgCloseHours;
+  final double tasksFromCallsPercent;
 }
 
 class Agreement {
@@ -174,25 +388,25 @@ class Agreement {
   });
 
   factory Agreement.fromJson(Map<String, dynamic> json) => Agreement(
-        id: json['id'] as String,
-        callId: json['call_id'] as String,
-        owner: AgreementOwner.fromWire(json['owner'] as String),
-        type: json['type'] as String,
-        title: json['title'] as String,
-        object: json['object'] as String?,
-        dueDate: parseDate(json['due_date'] as String?),
-        dueTime: json['due_time'] as String?,
-        amount: (json['amount'] as num?)?.toDouble(),
-        currency: json['currency'] as String?,
-        sourceQuote: json['source_quote'] as String,
-        audioStart: (json['audio_start'] as num).toDouble(),
-        audioEnd: (json['audio_end'] as num).toDouble(),
-        confidence: (json['confidence'] as num).toDouble(),
-        status: AgreementStatus.fromWire(json['status'] as String),
-        version: (json['version'] as num?)?.toInt() ?? 0,
-        createdAt: parseDate(json['created_at'] as String?),
-        updatedAt: parseDate(json['updated_at'] as String?),
-      );
+    id: json['id'] as String,
+    callId: json['call_id'] as String,
+    owner: AgreementOwner.fromWire(json['owner'] as String),
+    type: json['type'] as String,
+    title: json['title'] as String,
+    object: json['object'] as String?,
+    dueDate: parseDate(json['due_date'] as String?),
+    dueTime: json['due_time'] as String?,
+    amount: (json['amount'] as num?)?.toDouble(),
+    currency: json['currency'] as String?,
+    sourceQuote: json['source_quote'] as String,
+    audioStart: (json['audio_start'] as num).toDouble(),
+    audioEnd: (json['audio_end'] as num).toDouble(),
+    confidence: (json['confidence'] as num).toDouble(),
+    status: AgreementStatus.fromWire(json['status'] as String),
+    version: (json['version'] as num?)?.toInt() ?? 0,
+    createdAt: parseDate(json['created_at'] as String?),
+    updatedAt: parseDate(json['updated_at'] as String?),
+  );
 
   final String id;
   final String callId;
@@ -214,25 +428,25 @@ class Agreement {
   final DateTime? updatedAt;
 
   Map<String, dynamic> toJson() => {
-        'id': id,
-        'call_id': callId,
-        'owner': owner.wire,
-        'type': type,
-        'title': title,
-        'object': object,
-        'due_date': formatDateOnly(dueDate),
-        'due_time': dueTime,
-        'amount': amount,
-        'currency': currency,
-        'source_quote': sourceQuote,
-        'audio_start': audioStart,
-        'audio_end': audioEnd,
-        'confidence': confidence,
-        'status': status.wire,
-        'version': version,
-        'created_at': createdAt?.toIso8601String(),
-        'updated_at': updatedAt?.toIso8601String(),
-      };
+    'id': id,
+    'call_id': callId,
+    'owner': owner.wire,
+    'type': type,
+    'title': title,
+    'object': object,
+    'due_date': formatDateOnly(dueDate),
+    'due_time': dueTime,
+    'amount': amount,
+    'currency': currency,
+    'source_quote': sourceQuote,
+    'audio_start': audioStart,
+    'audio_end': audioEnd,
+    'confidence': confidence,
+    'status': status.wire,
+    'version': version,
+    'created_at': createdAt?.toIso8601String(),
+    'updated_at': updatedAt?.toIso8601String(),
+  };
 
   Agreement copyWith({
     String? id,
@@ -299,14 +513,14 @@ class AgreementPatch {
   final String? currency;
 
   Map<String, Object?> toJson() => <String, Object?>{
-        if (type != null) 'type': type,
-        if (title != null) 'title': title,
-        if (object != null) 'object': object,
-        if (owner != null) 'owner': owner!.wire,
-        if (dueDate != null) 'due_date': formatDateOnly(dueDate),
-        if (amount != null) 'amount': amount,
-        if (currency != null) 'currency': currency,
-      };
+    if (type != null) 'type': type,
+    if (title != null) 'title': title,
+    if (object != null) 'object': object,
+    if (owner != null) 'owner': owner!.wire,
+    if (dueDate != null) 'due_date': formatDateOnly(dueDate),
+    if (amount != null) 'amount': amount,
+    if (currency != null) 'currency': currency,
+  };
 }
 
 class Call {
@@ -327,20 +541,20 @@ class Call {
   });
 
   factory Call.fromJson(Map<String, dynamic> json) => Call(
-        id: json['id'] as String,
-        direction: CallDirection.fromWire(json['direction'] as String),
-        contactPhone: json['contact_phone'] as String,
-        contactName: json['contact_name'] as String?,
-        status: json['status'] as String,
-        summary: json['summary'] as String?,
-        startedAt: parseDate(json['started_at'] as String?),
-        answeredAt: parseDate(json['answered_at'] as String?),
-        endedAt: parseDate(json['ended_at'] as String?),
-        recordingStartedAt: parseDate(json['recording_started_at'] as String?),
-        version: (json['version'] as num).toInt(),
-        createdAt: parseDate(json['created_at'] as String?),
-        updatedAt: parseDate(json['updated_at'] as String?),
-      );
+    id: json['id'] as String,
+    direction: CallDirection.fromWire(json['direction'] as String),
+    contactPhone: json['contact_phone'] as String,
+    contactName: json['contact_name'] as String?,
+    status: json['status'] as String,
+    summary: json['summary'] as String?,
+    startedAt: parseDate(json['started_at'] as String?),
+    answeredAt: parseDate(json['answered_at'] as String?),
+    endedAt: parseDate(json['ended_at'] as String?),
+    recordingStartedAt: parseDate(json['recording_started_at'] as String?),
+    version: (json['version'] as num).toInt(),
+    createdAt: parseDate(json['created_at'] as String?),
+    updatedAt: parseDate(json['updated_at'] as String?),
+  );
 
   final String id;
   final CallDirection direction;
@@ -357,20 +571,20 @@ class Call {
   final DateTime? updatedAt;
 
   Map<String, dynamic> toJson() => {
-        'id': id,
-        'direction': direction.wire,
-        'contact_phone': contactPhone,
-        'contact_name': contactName,
-        'status': status,
-        'summary': summary,
-        'started_at': startedAt?.toIso8601String(),
-        'answered_at': answeredAt?.toIso8601String(),
-        'ended_at': endedAt?.toIso8601String(),
-        'recording_started_at': recordingStartedAt?.toIso8601String(),
-        'version': version,
-        'created_at': createdAt?.toIso8601String(),
-        'updated_at': updatedAt?.toIso8601String(),
-      };
+    'id': id,
+    'direction': direction.wire,
+    'contact_phone': contactPhone,
+    'contact_name': contactName,
+    'status': status,
+    'summary': summary,
+    'started_at': startedAt?.toIso8601String(),
+    'answered_at': answeredAt?.toIso8601String(),
+    'ended_at': endedAt?.toIso8601String(),
+    'recording_started_at': recordingStartedAt?.toIso8601String(),
+    'version': version,
+    'created_at': createdAt?.toIso8601String(),
+    'updated_at': updatedAt?.toIso8601String(),
+  };
 }
 
 class ContactItem {
@@ -397,13 +611,13 @@ class ConsentRecord {
   });
 
   factory ConsentRecord.fromJson(Map<String, dynamic> json) => ConsentRecord(
-        id: json['id'] as String,
-        subjectType: json['subject_type'] as String,
-        status: ConsentStatus.fromWire(json['status'] as String),
-        method: ConsentMethod.fromWire(json['method'] as String),
-        grantedAt: parseDate(json['granted_at'] as String?),
-        withdrawnAt: parseDate(json['withdrawn_at'] as String?),
-      );
+    id: json['id'] as String,
+    subjectType: json['subject_type'] as String,
+    status: ConsentStatus.fromWire(json['status'] as String),
+    method: ConsentMethod.fromWire(json['method'] as String),
+    grantedAt: parseDate(json['granted_at'] as String?),
+    withdrawnAt: parseDate(json['withdrawn_at'] as String?),
+  );
 
   final String id;
   final String subjectType;
@@ -413,11 +627,11 @@ class ConsentRecord {
   final DateTime? withdrawnAt;
 
   Map<String, dynamic> toJson() => <String, dynamic>{
-        'id': id,
-        'subject_type': subjectType,
-        'status': status.wire,
-        'method': method.wire,
-        'granted_at': grantedAt?.toIso8601String(),
-        'withdrawn_at': withdrawnAt?.toIso8601String(),
-      };
+    'id': id,
+    'subject_type': subjectType,
+    'status': status.wire,
+    'method': method.wire,
+    'granted_at': grantedAt?.toIso8601String(),
+    'withdrawn_at': withdrawnAt?.toIso8601String(),
+  };
 }
