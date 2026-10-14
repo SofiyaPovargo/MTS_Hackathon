@@ -1,6 +1,7 @@
 import 'package:intl/intl.dart';
 
 import '../domain/enums.dart';
+import '../domain/schedule.dart';
 
 final DateFormat _dueDateFormat = DateFormat('dd.MM.yyyy');
 final DateFormat _dateTimeFormat = DateFormat('dd.MM.yyyy HH:mm');
@@ -66,3 +67,31 @@ String agreementOwnerLabel(AgreementOwner owner) => switch (owner) {
 /// Confidence as a percent with one decimal place ("92.5%").
 String formatConfidence(double confidence) =>
     '${(confidence * 100).toStringAsFixed(1)}%';
+
+/// Human label for a call direction.
+String callDirectionLabel(CallDirection direction) => switch (direction) {
+  CallDirection.inbound => 'Входящий',
+  CallDirection.outbound => 'Исходящий',
+};
+
+/// Human label for the backend call status string (`CallOut.status`).
+String callStatusWireLabel(String status) => switch (status) {
+  'incoming' => 'Входящий',
+  'ringing' => 'Звонок',
+  'answered' => 'Отвечен',
+  'consent_notice' => 'Уведомление о записи',
+  'consent_result' => 'Согласие',
+  'recording' => 'Идёт запись',
+  'completed' => 'Завершён',
+  'missed' => 'Пропущен',
+  'failed' => 'Ошибка',
+  _ => status,
+};
+
+/// Human label for a reminder status.
+String reminderStatusLabel(ReminderStatus status) => switch (status) {
+  ReminderStatus.scheduled => 'Запланировано',
+  ReminderStatus.sent => 'Отправлено',
+  ReminderStatus.canceled => 'Отменено',
+  ReminderStatus.failed => 'Ошибка',
+};

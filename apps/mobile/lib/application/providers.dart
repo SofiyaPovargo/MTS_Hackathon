@@ -10,6 +10,7 @@ import '../domain/call.dart';
 import '../domain/consent.dart';
 import '../domain/models.dart';
 import '../domain/ports.dart';
+import '../domain/schedule.dart';
 import '../infrastructure/api/agreement_api.dart';
 import '../infrastructure/api/api_client.dart';
 import '../infrastructure/api/audio_ingest_api.dart';
@@ -35,6 +36,7 @@ import '../infrastructure/ws/ws_live_audio.dart';
 import 'auth_controller.dart';
 import 'board_controller.dart';
 import 'call_controller.dart';
+import 'call_history_controller.dart';
 import 'consent_controller.dart';
 import 'contacts_controller.dart';
 import 'manager_controller.dart';
@@ -228,4 +230,24 @@ final NotifierProvider<TaskActionsController, TaskActionsState>
     taskActionsControllerProvider =
     NotifierProvider<TaskActionsController, TaskActionsState>(
   TaskActionsController.new,
+);
+
+/// The user's own call history (`GET /calls`); see [CallHistoryController].
+final AsyncNotifierProvider<CallHistoryController, List<Call>>
+    callHistoryProvider =
+    AsyncNotifierProvider<CallHistoryController, List<Call>>(
+  CallHistoryController.new,
+);
+
+/// A single call (`GET /calls/{id}`), used by the call detail screen.
+final FutureProviderFamily<Call, String> callDetailProvider =
+    FutureProvider.family<Call, String>(
+  (ref, callId) => ref.watch(callApiProvider).getCall(callId),
+);
+
+/// A call's итог (`GET /calls/{id}/summary`), shared by the history detail and
+/// the live card.
+final FutureProviderFamily<CallSummary, String> callSummaryProvider =
+    FutureProvider.family<CallSummary, String>(
+  (ref, callId) => ref.watch(scheduleApiProvider).callSummary(callId),
 );
