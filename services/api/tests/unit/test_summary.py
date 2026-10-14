@@ -7,6 +7,9 @@ from datetime import date, time
 
 from app.domain.enums import AgreementStatus, CallDirection, CallStatus, Owner
 from app.infrastructure.db.models import Agreement, Call
+from app.ml.stt.schemas import TranscriptSegment
+from app.ml.summary.llm import InstructorLLMSummarizer
+from app.ml.summary.ports import AgreementFact, SummaryInput
 from app.services.summary import build_summary
 
 
@@ -86,3 +89,37 @@ def test_build_summary_formats_due_time() -> None:
     summary = build_summary(_call(), [agreement])
 
     assert "1. Созвон (на клиента, срок 2026-10-16 15:30) — нужно уточнить" in summary
+
+
+def test_llm_summary_prompt_includes_transcript_and_agreements() -> None:
+    summarizer = InstructorLLMSummarizer(
+        api_key="x", base_url="http://localhost:11434/v1", model="qwen2.5:7b"
+    )
+    data = SummaryInput(
+        conversation_id="c1",
+        client_label="Игорь",
+        transcript=[
+            TranscriptSegment(
+                speaker="operator", text="я пришлю договор до пятницы", start=1.0, end=2.0
+            )
+        ],
+        agreements=[
+            AgreementFact(
+                type="promise",
+                title="Прислать договор",
+                owner="counterparty",
+                due="2026-10-09",
+                status="detected",
+            )
+        ],
+    )
+
+    messages = summarizer._messages(data)
+    system = messages[0]["content"]
+    user = messages[1]["content"]
+
+    assert "Игорь" in user
+    assert "пришлю договор" in user
+    assert "Прислать договор" in user
+    assert "2026-10-09" in user
+    assert "выдумывай" in system

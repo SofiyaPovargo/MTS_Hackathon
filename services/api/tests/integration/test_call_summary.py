@@ -3,11 +3,18 @@
 from __future__ import annotations
 
 import uuid
+from datetime import UTC, datetime
+from decimal import Decimal
 
 import httpx
 import pytest
 from fastapi import FastAPI
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
+from app.domain.enums import AgreementStatus, CallDirection, CallStatus, Owner
+from app.infrastructure.db.models import Agreement, Call
+from app.ml.summary.ports import SummaryInput
+from app.services.summary import CallSummaryService
 from tests.integration.conftest import (
     USER_PHONES,
     auth_headers,
@@ -17,6 +24,69 @@ from tests.integration.conftest import (
 )
 
 pytestmark = pytest.mark.integration
+
+SessionFactory = async_sessionmaker[AsyncSession]
+
+
+class FakeSummarizer:
+    async def summarize(self, data: SummaryInput) -> str:
+        return "LLM: клиент ждёт договор до пятницы."
+
+
+class BoomSummarizer:
+    async def summarize(self, data: SummaryInput) -> str:
+        raise RuntimeError("boom")
+
+
+async def _call_with_agreement(session: AsyncSession, user_id: uuid.UUID) -> Call:
+    call = Call(
+        user_id=user_id,
+        direction=CallDirection.outbound,
+        contact_phone="+79990000000",
+        contact_name="Игорь",
+        status=CallStatus.completed,
+        started_at=datetime(2026, 10, 5, 9, 0, tzinfo=UTC),
+    )
+    session.add(call)
+    await session.flush()
+    session.add(
+        Agreement(
+            call_id=call.id,
+            owner=Owner.counterparty,
+            type="promise",
+            title="Прислать договор",
+            source_quote="я пришлю договор до пятницы",
+            audio_start=0,
+            audio_end=1,
+            confidence=Decimal("0.90"),
+            status=AgreementStatus.detected,
+        )
+    )
+    await session.commit()
+    return call
+
+
+async def test_llm_summary_overrides_deterministic(
+    session_factory: SessionFactory,
+    seeded_users: dict[str, uuid.UUID],
+) -> None:
+    async with session_factory() as session:
+        call = await _call_with_agreement(session, seeded_users["anna_id"])
+        text = await CallSummaryService(session, FakeSummarizer()).refresh(call)
+        await session.commit()
+    assert text == "LLM: клиент ждёт договор до пятницы."
+
+
+async def test_llm_summary_falls_back_on_error(
+    session_factory: SessionFactory,
+    seeded_users: dict[str, uuid.UUID],
+) -> None:
+    async with session_factory() as session:
+        call = await _call_with_agreement(session, seeded_users["anna_id"])
+        text = await CallSummaryService(session, BoomSummarizer()).refresh(call)
+        await session.commit()
+    assert "Итог звонка" in text
+    assert "Прислать договор" in text
 
 
 async def test_call_summary_reflects_agreements(

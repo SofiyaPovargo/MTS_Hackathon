@@ -1,8 +1,8 @@
 # ML-пайплайн (соглашения в телефонных разговорах)
 
 > **Статус: ML-трек завершён.** Batch и live пути, VAD (Silero), LLM self-host
-> (Ollama `qwen2.5:7b`), события и privacy (удаление/retention/redaction) готовы и
-> проверены end-to-end на реальных моделях. Вне ML осталось: notifications-воркер
+> (Ollama `qwen2.5:7b`), события, privacy (удаление/retention/redaction) и
+> LLM-резюме звонка готовы и проверены. Вне ML осталось: notifications-воркер
 > (`send_reminder`), авто-триггер Exolve `crr`, шифрование транскриптов в БД.
 
 Документ описывает фактический ML-пайплайн проекта: целевую схему из
@@ -243,3 +243,16 @@ Live-аудио приходит от клиента на `WS /api/ws/calls/{id}
   (research-аудио в `.gitignore`).
 - Запись возможна только после `answered` + согласия; правило не обходится в
   тестах и демо.
+
+## 10. Итог звонка: резюме (LLM с детерминированным фоллбэком)
+
+- `services/summary.py::CallSummaryService` принимает опциональный
+  `ml/summary/ports.py::SummaryPort`: если задан — резюме генерирует LLM
+  (`ml/summary/llm.py::InstructorLLMSummarizer`, тот же self-host LLM), иначе и
+  при ошибке LLM — детерминированный `build_summary` (пайплайн не падает).
+- Резюме кэшируется в `calls.summary` (виден в `GET /calls/{id}`, sync,
+  `call_ended`) и обновляется после извлечения: batch — `extract_and_store`,
+  live — `extract_incremental` при изменениях. `GET /calls/{id}/summary`
+  возвращает сохранённое резюме (или строит детерминированное, если его нет) —
+  без ML-зависимостей в лёгком API-образе.
+- Промпт: только по транскрипту и договорённостям, без выдуманных фактов и статусов.

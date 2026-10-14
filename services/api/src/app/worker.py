@@ -35,6 +35,7 @@ from app.ml.diarization.ports import DiarizationPort
 from app.ml.extraction.ports import ExtractionPort
 from app.ml.live import stream_transcribe_and_store
 from app.ml.pipeline import extract_and_store, extract_incremental, transcribe_and_store
+from app.ml.summary.ports import SummaryPort
 from app.ml.vad.ports import VadPort
 from app.services.data_deletion import delete_user_data, purge_expired_audio
 from app.services.events import EventHub
@@ -110,6 +111,19 @@ def _build_extractor(settings: Settings) -> ExtractionPort | None:
     from app.ml.extraction.llm import InstructorLLMExtractor
 
     return InstructorLLMExtractor(
+        api_key=settings.llm_api_key or "not-needed",
+        base_url=settings.llm_base_url,
+        model=settings.llm_model,
+    )
+
+
+def _build_summarizer(settings: Settings) -> SummaryPort | None:
+    """LLM call summary; off unless an LLM endpoint is configured."""
+    if not settings.llm_enabled:
+        return None
+    from app.ml.summary.llm import InstructorLLMSummarizer
+
+    return InstructorLLMSummarizer(
         api_key=settings.llm_api_key or "not-needed",
         base_url=settings.llm_base_url,
         model=settings.llm_model,
@@ -206,6 +220,7 @@ async def _run_llm_extraction(call_id: str) -> int:
     try:
         events = EventHub(cache)
         extractor = _build_extractor(settings)
+        summarizer = _build_summarizer(settings)
         async with factory() as session:
             agreements = await extract_and_store(
                 session,
@@ -213,6 +228,7 @@ async def _run_llm_extraction(call_id: str) -> int:
                 extractor=extractor,
                 events=events,
                 settings=settings,
+                summarizer=summarizer,
             )
             await session.commit()
             return len(agreements)
@@ -291,6 +307,7 @@ async def _stream_extract(call_id: str) -> int:
     try:
         events = EventHub(cache)
         extractor = _build_extractor(settings)
+        summarizer = _build_summarizer(settings)
         async with factory() as session:
             changed = await extract_incremental(
                 session,
@@ -298,6 +315,7 @@ async def _stream_extract(call_id: str) -> int:
                 extractor=extractor,
                 events=events,
                 settings=settings,
+                summarizer=summarizer,
             )
             await session.commit()
             return len(changed)

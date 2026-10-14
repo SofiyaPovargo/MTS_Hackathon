@@ -56,8 +56,11 @@ backend — `cd services/api && uv run ruff check . && uv run mypy . && uv run p
 
 - [x] LLM (Ollama `qwen2.5:7b`), live-ASR/VAD (T-one + Silero), детерминированные
       даты, приватность: удаление данных, retention-пурж, redaction.
-- [ ] *(вне трека B, опц.)* напоминания-воркер `send_reminder`; резюме через LLM
-      вместо детерминированного `summary.py`.
+- [ ] *(вне трека B, опц.)* напоминания-воркер `send_reminder` (реальные адаптеры
+      `RemindersPort`/FCM — трек C).
+- [x] *(опц., трек B)* **резюме через LLM** вместо детерминированного
+      `summary.py` — `ml/summary/` (`InstructorLLMSummarizer`), фоллбэк на
+      `build_summary`; кэш в `calls.summary`.
 
 ## Тестирование и демо (вся команда)
 
