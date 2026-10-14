@@ -152,6 +152,9 @@ async def create_call(
         contact_phone=payload.callee_phone,
         contact_name=payload.contact_name,
         external_id=payload.external_id,
+        call_id=payload.id,
+        started_at=payload.started_at,
+        record_consent=payload.record_consent,
     )
     await session.commit()
     return schemas.CallOut.model_validate(call, from_attributes=True)
@@ -240,6 +243,38 @@ async def analyze_call(
         raise Conflict("call was not recorded")
     request.app.state.analysis_queue.enqueue_asr(str(call.id))
     return schemas.CallAnalyzeResponse(call_id=call.id, status="queued")
+
+
+@router.post("/calls/{call_id}/recordings", response_model=schemas.CallOut)
+async def declare_call_recording(
+    call_id: uuid.UUID,
+    payload: schemas.CallRecordingRequest,
+    user: User = Depends(get_current_user),
+    session: AsyncSession = Depends(get_session),
+    calls: CallSessionService = Depends(get_call_session_service),
+) -> schemas.CallOut:
+    """Declare a call recorded on the client and its consent (§13, offline).
+
+    When the conversation happens without network the app records locally; once
+    online it creates the call and calls this endpoint to fix the recording and
+    consent on the server, after which the audio upload is accepted. The gate is
+    not bypassed: both consent events are stored and a refused party leaves the
+    call unrecorded (the upload then returns 409). Owner-only.
+    """
+    call = await get_call_or_404(session, call_id)
+    await _require_call_owner(user, call.user_id)
+    call = await calls.declare_recording(
+        user,
+        call,
+        record_consent=payload.record_consent,
+        participant_consent=payload.participant_consent,
+        consent_method=payload.consent_method,
+        answered_at=payload.answered_at,
+        recording_started_at=payload.recording_started_at,
+        ended_at=payload.ended_at,
+    )
+    await session.commit()
+    return schemas.CallOut.model_validate(call, from_attributes=True)
 
 
 @router.post(

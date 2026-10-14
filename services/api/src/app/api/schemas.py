@@ -13,6 +13,7 @@ from app.domain.enums import (
     AgreementStatus,
     CallDirection,
     CallEvent,
+    ConsentMethod,
     ConsentStatus,
     Owner,
     ReminderChannel,
@@ -56,11 +57,42 @@ class RefreshRequest(BaseModel):
 
 
 class CallCreateRequest(BaseModel):
+    """Create a call. A client ``id`` makes the request idempotent (§13).
+
+    The offline client generates the UUID locally, so replaying the request
+    after a network drop returns the same call instead of a duplicate.
+    """
+
+    id: uuid.UUID | None = Field(
+        default=None, description="Client-generated call id (offline); idempotency key."
+    )
     direction: CallDirection
     callee_phone: str = Field(pattern=r"^\+[0-9]{10,15}$")
     contact_name: str | None = Field(default=None, max_length=200)
     external_id: str | None = None
+    started_at: datetime | None = Field(
+        default=None, description="Real conversation start (offline); defaults to now."
+    )
     record_consent: bool = True
+
+
+class CallRecordingRequest(BaseModel):
+    """Declare a call recorded on the client and its consent (§13, offline).
+
+    The call happened without network: the app recorded locally and now pushes
+    it. The owner JWT carries the assertion that the app user consented
+    (``record_consent``) and that the counterparty consent was obtained
+    (``participant_consent`` + ``consent_method``). The server stores both
+    consent events and only then fixes ``recording_started_at``; a refused
+    party leaves the call unrecorded and the audio upload is refused.
+    """
+
+    record_consent: bool = True
+    participant_consent: ConsentStatus = ConsentStatus.granted
+    consent_method: ConsentMethod = ConsentMethod.audio_notice
+    answered_at: datetime | None = None
+    recording_started_at: datetime | None = None
+    ended_at: datetime | None = None
 
 
 class CallOut(BaseModel):
