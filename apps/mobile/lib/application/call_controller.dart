@@ -5,9 +5,11 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../domain/call.dart';
 import '../domain/enums.dart';
 import '../domain/models.dart';
+import '../domain/offline_call.dart';
 import '../domain/ports.dart';
 import '../domain/ws_event.dart';
 import '../infrastructure/api/api_exception.dart';
+import 'offline_call_service.dart';
 import 'providers.dart';
 import 'recording_service.dart';
 
@@ -25,6 +27,8 @@ class CallController extends Notifier<CallState?> {
   AgreementApi get _agreements => ref.read(agreementApiProvider);
   ScheduleApi get _schedule => ref.read(scheduleApiProvider);
   CallRecordingService get _recording => ref.read(recordingServiceProvider);
+  OfflineCallService get _offline => ref.read(offlineCallServiceProvider);
+  String Function() get _newCallId => ref.read(callIdFactoryProvider);
 
   // ignore: cancel_subscriptions — cancelled in [_disconnectLive] / onDispose.
   StreamSubscription<CallEvent>? _liveSub;
@@ -41,6 +45,13 @@ class CallController extends Notifier<CallState?> {
   }
 
   /// Places an outgoing call. Returns an error message, or `null` on success.
+  ///
+  /// A client-generated id is sent so the call is idempotent: if the network
+  /// drops after the trigger but before the response, the call is still created
+  /// once and never duplicated (plan.md §13). When the backend is unreachable
+  /// the call proceeds as an **offline** call and is registered later
+  /// ([OfflineCallService]); a non-retryable error (validation/forbidden) is
+  /// surfaced instead.
   Future<String?> startOutgoing(String phone, {String? name}) async {
     final normalized = phone.trim();
     if (normalized.isEmpty) return 'Введите номер';
@@ -49,17 +60,22 @@ class CallController extends Notifier<CallState?> {
       return 'Нет доступа к микрофону. Разрешите его в настройках приложения.';
     }
 
-    // The server owns the call record; without it there is nothing to analyze.
-    String? callId;
+    var callId = _newCallId();
+    var offline = false;
+    final startedAt = DateTime.now();
     try {
       final call = await _api.createCall(
         direction: CallDirection.outbound,
         calleePhone: normalized,
         contactName: name,
+        id: callId,
+        startedAt: startedAt,
       );
       callId = call.id;
     } on ApiException catch (error) {
-      return error.message;
+      // No backend yet: keep the call usable locally and register it later.
+      if (!error.isRetryable) return error.message;
+      offline = true;
     }
 
     final externalId = await _voice.dial(normalized, name: name);
@@ -72,7 +88,8 @@ class CallController extends Notifier<CallState?> {
       callId: callId,
       externalId: externalId,
       recordingEnabled: consent.recordingEnabled,
-      startedAt: DateTime.now(),
+      offline: offline,
+      startedAt: startedAt,
     );
     return null;
   }
@@ -370,14 +387,48 @@ class CallController extends Notifier<CallState?> {
           : CallLifecycleStatus.missed;
       if (!canTransitionCall(current.status, target)) return;
     }
-    state = current.copyWith(status: target, endedAt: DateTime.now());
-    if (current.callId != null) {
-      unawaited(_recording.finish(current.callId!));
-      // The summary becomes available once the call is terminal; load it in the
-      // background. [loadSummary] never throws, so an offline failure is silent.
-      unawaited(loadSummary());
+    final ended = current.copyWith(status: target, endedAt: DateTime.now());
+    state = ended;
+    if (ended.callId != null) {
+      unawaited(_finalize(ended));
     }
     _disconnectLive();
+  }
+
+  /// Stops capture, saves the recording and registers an offline call on the
+  /// server once the network allows it. Best-effort: a still-offline flush keeps
+  /// everything queued, so nothing is lost.
+  Future<void> _finalize(CallState ended) async {
+    final callId = ended.callId!;
+    await _recording.finish(callId);
+    if (ended.offline) {
+      await _offline.register(_pendingFrom(ended));
+      final registered = await _offline.flush();
+      if (registered > 0) await _recording.uploadPending();
+    }
+    // The summary becomes available once the call is terminal; [loadSummary]
+    // never throws, so an offline failure stays silent.
+    await loadSummary();
+  }
+
+  /// Builds the offline registration. The counterparty consent is only ever the
+  /// real result ([CallState.participantDeclined]); the controller never grants
+  /// it on its own (AGENTS consent gate).
+  PendingCall _pendingFrom(CallState ended) {
+    final appConsent = ref.read(consentControllerProvider).valueOrNull;
+    return PendingCall(
+      callId: ended.callId!,
+      direction: ended.direction,
+      calleePhone: ended.phone,
+      contactName: ended.name,
+      startedAt: ended.startedAt ?? DateTime.now(),
+      recordConsent: appConsent?.recordingEnabled ?? false,
+      participantConsent: ended.participantDeclined
+          ? ConsentStatus.denied
+          : ConsentStatus.granted,
+      answeredAt: ended.answeredAt,
+      endedAt: ended.endedAt,
+    );
   }
 
   void _advance(CallLifecycleStatus target) {

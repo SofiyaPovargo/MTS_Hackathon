@@ -39,6 +39,7 @@ class CallState {
     this.muted = false,
     this.recordingEnabled = false,
     this.participantDeclined = false,
+    this.offline = false,
     this.startedAt,
     this.answeredAt,
     this.endedAt,
@@ -67,6 +68,11 @@ class CallState {
   /// Set when the counterparty refused recording; the call continues as an
   /// ordinary call and the user edits/enters agreements manually.
   final bool participantDeclined;
+
+  /// True when the call was placed while the backend was unreachable: the app
+  /// keeps one id locally and registers the call (and its recording) once the
+  /// network is back (plan.md §13).
+  final bool offline;
 
   final DateTime? startedAt;
   final DateTime? answeredAt;
@@ -105,6 +111,7 @@ class CallState {
     bool? muted,
     bool? recordingEnabled,
     bool? participantDeclined,
+    bool? offline,
     DateTime? answeredAt,
     DateTime? endedAt,
     List<TranscriptSegment>? transcript,
@@ -121,6 +128,7 @@ class CallState {
       muted: muted ?? this.muted,
       recordingEnabled: recordingEnabled ?? this.recordingEnabled,
       participantDeclined: participantDeclined ?? this.participantDeclined,
+      offline: offline ?? this.offline,
       startedAt: startedAt,
       answeredAt: answeredAt ?? this.answeredAt,
       endedAt: endedAt ?? this.endedAt,

@@ -4,6 +4,7 @@ import 'dart:io';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:path/path.dart' as p;
 import 'package:sqflite/sqflite.dart';
+import 'package:uuid/uuid.dart';
 
 import '../core/config.dart';
 import '../domain/call.dart';
@@ -26,6 +27,7 @@ import '../infrastructure/db/app_database.dart';
 import '../infrastructure/db/consent_store.dart';
 import '../infrastructure/db/local_board_store.dart';
 import '../infrastructure/db/outbox_store.dart';
+import '../infrastructure/db/pending_call_store.dart';
 import '../infrastructure/db/session_store.dart';
 import '../infrastructure/db/sync_state_store.dart';
 import '../infrastructure/repositories/contacts_source.dart';
@@ -40,6 +42,7 @@ import 'call_history_controller.dart';
 import 'consent_controller.dart';
 import 'contacts_controller.dart';
 import 'manager_controller.dart';
+import 'offline_call_service.dart';
 import 'recording_service.dart';
 import 'task_actions_controller.dart';
 
@@ -174,19 +177,46 @@ final Provider<CallRecordingService> recordingServiceProvider =
   ),
 );
 
-/// Retries recordings that were buffered while offline as soon as a session
-/// exists (app start / next login). Read once by the authenticated area.
+/// Client-generated call ids (UUID v4). The same id is used locally and on the
+/// server, so an offline call is created idempotently (plan.md §13). Tests
+/// override it with a deterministic id.
+final Provider<String Function()> callIdFactoryProvider =
+    Provider<String Function()>((ref) => const Uuid().v4);
+
+/// Calls registered while offline, pushed once the network is back (plan.md §13).
+final Provider<PendingCallStore> pendingCallStoreProvider = Provider<PendingCallStore>(
+  (ref) => SqlitePendingCallStore(ref.watch(databaseProvider)),
+);
+
+/// Registers offline calls on the server (idempotent create + recording
+/// declaration); audio is uploaded afterwards.
+final Provider<OfflineCallService> offlineCallServiceProvider =
+    Provider<OfflineCallService>(
+  (ref) => OfflineCallService(
+    store: ref.watch(pendingCallStoreProvider),
+    api: ref.watch(callApiProvider),
+  ),
+);
+
+/// Pushes anything that was buffered while offline as soon as a session exists
+/// (app start / next login): first the offline call registrations, then the
+/// audio that belongs to them. Read once by the authenticated area.
 final Provider<void> recordingRetryProvider = Provider<void>((ref) {
   ref.listen<AsyncValue<AuthSession?>>(
     authControllerProvider,
     (_, next) {
       if (next.valueOrNull != null) {
-        unawaited(ref.read(recordingServiceProvider).uploadPending());
+        unawaited(_retryPending(ref));
       }
     },
     fireImmediately: true,
   );
 });
+
+Future<void> _retryPending(Ref ref) async {
+  await ref.read(offlineCallServiceProvider).flush();
+  await ref.read(recordingServiceProvider).uploadPending();
+}
 
 final Provider<ContactsSource> contactsSourceProvider =
     Provider<ContactsSource>((ref) => const DeviceContactsSource());

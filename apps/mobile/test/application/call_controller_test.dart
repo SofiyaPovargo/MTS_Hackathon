@@ -21,6 +21,7 @@ import '../support/fakes.dart';
   FakeAudioIngestApi ingest,
   FakeLiveAudioPort live,
   FakeScheduleApi schedule,
+  InMemoryPendingCallStore pending,
 }) buildContainer({
   bool permission = true,
   ApiException? apiError,
@@ -37,10 +38,15 @@ import '../support/fakes.dart';
   final ingest = FakeAudioIngestApi();
   final live = FakeLiveAudioPort();
   final schedule = FakeScheduleApi(error: scheduleError);
+  final pending = InMemoryPendingCallStore();
   final container = ProviderContainer(
     overrides: <Override>[
       voiceCallProviderProvider.overrideWithValue(voice),
       callApiProvider.overrideWithValue(api),
+      // Deterministic client id so the offline call keeps the same id locally
+      // and on the server (plan.md §13).
+      callIdFactoryProvider.overrideWithValue(() => testCallId),
+      pendingCallStoreProvider.overrideWithValue(pending),
       consentStoreProvider.overrideWithValue(InMemoryConsentStore(consent)),
       consentApiProvider.overrideWithValue(FakeConsentApi()),
       // Always fake the live feed: the real client opens a socket.
@@ -69,6 +75,7 @@ import '../support/fakes.dart';
     ingest: ingest,
     live: live,
     schedule: schedule,
+    pending: pending,
   );
 }
 
@@ -172,16 +179,106 @@ void main() {
     expect(scope.voice.dialed, isEmpty);
   });
 
-  test('backend failure surfaces the message and does not dial', () async {
+  test('non-retryable backend failure surfaces the message and does not dial', () async {
+    final scope = buildContainer(
+      apiError: const ApiException(ApiErrorKind.validation, 'bad number'),
+    );
+    addTearDown(scope.container.dispose);
+    final controller = scope.container.read(callControllerProvider.notifier);
+
+    expect(await controller.startOutgoing('+79000000002'), 'bad number');
+    expect(scope.voice.dialed, isEmpty);
+    expect(scope.container.read(callControllerProvider), isNull);
+  });
+
+  test('no network falls back to an offline call with a client id', () async {
     final scope = buildContainer(
       apiError: const ApiException(ApiErrorKind.network, 'offline'),
     );
     addTearDown(scope.container.dispose);
     final controller = scope.container.read(callControllerProvider.notifier);
 
-    expect(await controller.startOutgoing('+79000000002'), 'offline');
-    expect(scope.voice.dialed, isEmpty);
-    expect(scope.container.read(callControllerProvider), isNull);
+    expect(await controller.startOutgoing('+79000000002', name: 'Анна'), isNull);
+    expect(scope.voice.dialed, <String>['+79000000002']);
+    final call = scope.container.read(callControllerProvider);
+    expect(call?.offline, isTrue);
+    expect(call?.callId, testCallId);
+    expect(call?.status, CallLifecycleStatus.ringing);
+    expect(scope.api.created, isEmpty);
+  });
+
+  test('offline call is registered and its recording declared once online', () async {
+    final scope = buildContainer(
+      apiError: const ApiException(ApiErrorKind.network, 'offline'),
+      consent: const AppConsent(status: ConsentStatus.granted, synced: true),
+    );
+    addTearDown(scope.container.dispose);
+    final controller = scope.container.read(callControllerProvider.notifier);
+    // The audio ingest shares the same (down) network.
+    scope.ingest.down = true;
+
+    expect(await controller.startOutgoing('+79000000002', name: 'Анна'), isNull);
+    scope.voice.emit(const CallSignal(kind: CallSignalKind.answered));
+    await pumpEventQueue();
+    controller.markConsentResult(granted: true);
+    await pumpEventQueue();
+    scope.voice.emitAudio(List<int>.filled(12, 1));
+    await pumpEventQueue();
+
+    await controller.hangup();
+    await pumpEventQueue();
+
+    // While offline the registration is queued and nothing is uploaded.
+    expect(scope.pending.calls, hasLength(1));
+    expect(scope.api.declared, isEmpty);
+    final recorded = await scope.store.get(testCallId);
+    expect(recorded?.status, RecordingUploadStatus.pending);
+
+    // The network returns: flush registers the call, declares the recording and
+    // then the buffered audio can be uploaded.
+    scope.api.error = null;
+    scope.ingest.down = false;
+    final registered =
+        await scope.container.read(offlineCallServiceProvider).flush();
+    expect(registered, 1);
+    expect(scope.api.createdWithId, <String>[testCallId]);
+    final declared = scope.api.declared.single;
+    expect(declared.callId, testCallId);
+    expect(declared.participantConsent, ConsentStatus.granted);
+    expect(scope.pending.calls, isEmpty);
+
+    await scope.container.read(recordingServiceProvider).uploadPending();
+    await pumpEventQueue();
+    expect(
+      (await scope.store.get(testCallId))?.status,
+      RecordingUploadStatus.uploaded,
+    );
+  });
+
+  test('offline call stores a refused counterparty consent as denied', () async {
+    final scope = buildContainer(
+      apiError: const ApiException(ApiErrorKind.network, 'offline'),
+      consent: const AppConsent(status: ConsentStatus.granted, synced: true),
+    );
+    addTearDown(scope.container.dispose);
+    final controller = scope.container.read(callControllerProvider.notifier);
+
+    await controller.startOutgoing('+79000000002');
+    scope.voice.emit(const CallSignal(kind: CallSignalKind.answered));
+    await pumpEventQueue();
+    controller.markConsentResult(granted: false);
+    await pumpEventQueue();
+
+    scope.voice.emitAudio(List<int>.filled(12, 1));
+    await pumpEventQueue();
+    expect(scope.voice.mediaStreamOpened, isEmpty);
+
+    await controller.hangup();
+    await pumpEventQueue();
+
+    final queued = scope.pending.calls.values.single;
+    expect(queued.participantConsent, ConsentStatus.denied);
+    expect(queued.recordConsent, isTrue);
   });
 
   test('incoming call can be answered', () async {
