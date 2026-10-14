@@ -50,6 +50,8 @@ Scope setup({
     overrides: <Override>[
       voiceCallProviderProvider.overrideWithValue(voice),
       callApiProvider.overrideWithValue(FakeCallApi()),
+      // Deterministic client id so the emitters below match the running call.
+      callIdFactoryProvider.overrideWithValue(() => testCallId),
       consentStoreProvider.overrideWithValue(InMemoryConsentStore(consent)),
       consentApiProvider.overrideWithValue(FakeConsentApi()),
       callEventsProvider.overrideWithValue(events),

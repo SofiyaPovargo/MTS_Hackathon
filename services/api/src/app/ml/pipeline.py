@@ -53,6 +53,7 @@ from app.ml.stt.pipeline import (
     decode_phone_pcm,
 )
 from app.ml.stt.schemas import TranscriptSegment
+from app.ml.summary.ports import SummaryPort
 from app.ml.vad.ports import VadPort
 from app.services.agreement import AgreementService
 from app.services.events import CallEventMessage
@@ -227,6 +228,7 @@ async def extract_and_store(
     extractor: ExtractionPort | None,
     events: EventsPort,
     settings: Settings,
+    summarizer: SummaryPort | None = None,
 ) -> list[Agreement]:
     """worker-ai: транскрипт -> провалидированные agreements + ``agreement_detected``.
 
@@ -235,7 +237,7 @@ async def extract_and_store(
     if extractor is None:
         logger.info("LLM extractor is disabled; skipping extraction for call %s", call_id)
         # Итог звонка не зависит от LLM: собираем его из того, что уже есть.
-        await generate_call_summary(session, call_id)
+        await generate_call_summary(session, call_id, summarizer)
         return []
 
     call = await repositories.get_call(session, call_id)
@@ -247,7 +249,7 @@ async def extract_and_store(
 
     if await repositories.has_agreement_extractions(session, call_id):
         logger.info("agreements already extracted for call %s; reusing", call_id)
-        await generate_call_summary(session, call_id)
+        await generate_call_summary(session, call_id, summarizer)
         return list(await repositories.list_agreements_for_call(session, call_id))
 
     row = await repositories.get_transcript(session, call_id)
@@ -293,7 +295,7 @@ async def extract_and_store(
         )
     await session.flush()
     # Итог звонка (§9): детерминированное резюме из валидированных договорённостей.
-    await generate_call_summary(session, call_id)
+    await generate_call_summary(session, call_id, summarizer)
     logger.info("extracted %d agreement(s) for call %s", len(created), call_id)
     return created
 
@@ -305,6 +307,7 @@ async def extract_incremental(
     extractor: ExtractionPort | None,
     events: EventsPort,
     settings: Settings,
+    summarizer: SummaryPort | None = None,
 ) -> list[Agreement]:
     """Инкрементальное извлечение: upsert по fingerprint, события только на изменения.
 
@@ -361,6 +364,9 @@ async def extract_incremental(
                 )
             )
     await session.flush()
+    if changed_agreements:
+        # Итог звонка (§9): обновляем резюме, когда договорённости изменились.
+        await generate_call_summary(session, call_id, summarizer)
     logger.info(
         "live extraction for call %s: %d changed agreement(s)",
         call_id,

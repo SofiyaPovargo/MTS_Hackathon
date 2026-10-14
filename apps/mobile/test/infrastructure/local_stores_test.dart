@@ -9,6 +9,7 @@ import 'package:agreement_capture/infrastructure/db/app_database.dart';
 import 'package:agreement_capture/infrastructure/db/consent_store.dart';
 import 'package:agreement_capture/infrastructure/db/local_board_store.dart';
 import 'package:agreement_capture/infrastructure/db/outbox_store.dart';
+import 'package:agreement_capture/infrastructure/db/pending_call_store.dart';
 import 'package:agreement_capture/infrastructure/db/session_store.dart';
 import 'package:agreement_capture/infrastructure/db/sync_state_store.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -88,6 +89,42 @@ void main() {
       final pending = await store.pending();
       expect(pending, hasLength(1));
       expect(pending.single.entityId, 'a1');
+    });
+  });
+
+  group('SqlitePendingCallStore', () {
+    test('stores, replaces by call id and removes a queued call', () async {
+      final store = SqlitePendingCallStore(database);
+      expect(await store.pending(), isEmpty);
+
+      await store.save(
+        testPendingCall(
+          callId: 'call-b',
+          answeredAt: DateTime.utc(2026, 10, 14, 9, 1),
+          endedAt: DateTime.utc(2026, 10, 14, 9, 5),
+        ),
+      );
+      await store.save(
+        testPendingCall(
+          callId: 'call-a',
+          calleePhone: '+79000000009',
+        ),
+      );
+
+      final pending = await store.pending();
+      expect(pending, hasLength(2));
+      final a = pending.singleWhere((call) => call.callId == 'call-a');
+      expect(a.calleePhone, '+79000000009');
+      expect(a.answeredAt, isNull);
+      final b = pending.singleWhere((call) => call.callId == 'call-b');
+      expect(b.answeredAt, DateTime.utc(2026, 10, 14, 9, 1));
+      expect(b.endedAt, DateTime.utc(2026, 10, 14, 9, 5));
+
+      await store.remove('call-a');
+      expect(
+        (await store.pending()).map((call) => call.callId),
+        <String>['call-b'],
+      );
     });
   });
 
