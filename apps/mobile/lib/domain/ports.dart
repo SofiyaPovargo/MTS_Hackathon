@@ -8,6 +8,7 @@ import 'call.dart';
 import 'consent.dart';
 import 'enums.dart';
 import 'models.dart';
+import 'schedule.dart';
 import 'sync_models.dart';
 import 'ws_event.dart';
 
@@ -270,4 +271,39 @@ abstract class LiveAudioPort {
   Future<void> send(List<int> frame);
 
   Future<void> close();
+}
+
+/// Call summary, calendar, reminders and client-message drafts (plan.md §9).
+///
+/// Every calendar/reminder/draft write is an explicit user action; the draft is
+/// never sent automatically. Pure contract — no Flutter imports.
+abstract class ScheduleApi {
+  /// Итог звонка (`GET /calls/{call_id}/summary`), owner only.
+  Future<CallSummary> callSummary(String callId);
+
+  /// Writes the confirmed task into the calendar (`POST /tasks/{id}/calendar`).
+  Future<CalendarEvent> createCalendarEvent(String taskId);
+
+  /// Portable `.ics` (`GET /tasks/{id}/calendar.ics`), raw `text/calendar`.
+  Future<String> ics(String taskId);
+
+  /// Removes the task's calendar event (`DELETE /tasks/{id}/calendar`).
+  Future<void> deleteCalendarEvent(String taskId);
+
+  /// Schedules a reminder (`POST /tasks/{id}/reminders`).
+  Future<Reminder> createReminder(
+    String taskId, {
+    required DateTime remindAt,
+    ReminderChannel channel = ReminderChannel.push,
+  });
+
+  /// Lists the task's reminders (`GET /tasks/{id}/reminders`).
+  Future<List<Reminder>> reminders(String taskId);
+
+  /// Cancels a reminder (`POST /reminders/{id}/cancel`).
+  Future<Reminder> cancelReminder(String reminderId);
+
+  /// Builds a client-message draft (`POST /tasks/{id}/message-draft`); the
+  /// draft is never sent automatically.
+  Future<MessageDraft> draftMessage(String taskId);
 }

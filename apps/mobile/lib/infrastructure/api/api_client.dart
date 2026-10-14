@@ -45,6 +45,18 @@ class ApiClient {
   Future<Object?> delete(String path, {bool auth = true}) =>
       _send('DELETE', path, auth: auth);
 
+  /// Fetches a raw text body (e.g. `text/calendar`) without JSON decoding.
+  Future<String> getText(String path, {bool auth = true}) async {
+    final data = await _send(
+      'GET',
+      path,
+      auth: auth,
+      responseType: ResponseType.plain,
+    );
+    if (data is String) return data;
+    return data?.toString() ?? '';
+  }
+
   /// Uploads raw bytes (call audio) with an explicit content type. The body is
   /// sent as-is — never JSON-encoded — so `Content-Range` resumable chunks and
   /// binary audio survive the round-trip.
@@ -75,6 +87,7 @@ class ApiClient {
     bool retried = false,
     String? contentType,
     Map<String, String>? extraHeaders,
+    ResponseType? responseType,
   }) async {
     try {
       final headers = await _headers(auth);
@@ -88,7 +101,11 @@ class ApiClient {
         path,
         data: body,
         queryParameters: query,
-        options: Options(method: method, headers: headers),
+        options: Options(
+          method: method,
+          headers: headers,
+          responseType: responseType,
+        ),
       );
       return response.data;
     } on DioException catch (error) {
@@ -105,6 +122,7 @@ class ApiClient {
             retried: true,
             contentType: contentType,
             extraHeaders: extraHeaders,
+            responseType: responseType,
           );
         }
         throw const ApiException(ApiErrorKind.sessionExpired, 'Session expired', statusCode: 401);

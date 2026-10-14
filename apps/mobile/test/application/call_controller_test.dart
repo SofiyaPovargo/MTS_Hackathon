@@ -20,11 +20,13 @@ import '../support/fakes.dart';
   InMemoryAudioRecordingStore store,
   FakeAudioIngestApi ingest,
   FakeLiveAudioPort live,
+  FakeScheduleApi schedule,
 }) buildContainer({
   bool permission = true,
   ApiException? apiError,
   ApiException? eventsError,
   ApiException? agreementError,
+  ApiException? scheduleError,
   AppConsent consent = AppConsent.undecided,
 }) {
   final voice = FakeVoiceCallProvider(microphoneGranted: permission);
@@ -34,6 +36,7 @@ import '../support/fakes.dart';
   final store = InMemoryAudioRecordingStore();
   final ingest = FakeAudioIngestApi();
   final live = FakeLiveAudioPort();
+  final schedule = FakeScheduleApi(error: scheduleError);
   final container = ProviderContainer(
     overrides: <Override>[
       voiceCallProviderProvider.overrideWithValue(voice),
@@ -43,6 +46,8 @@ import '../support/fakes.dart';
       // Always fake the live feed: the real client opens a socket.
       callEventsProvider.overrideWithValue(events),
       agreementApiProvider.overrideWithValue(agreementApi),
+      // Always fake the call summary: the real client hits the network.
+      scheduleApiProvider.overrideWithValue(schedule),
       // Always fake Stage 6 audio: the real store opens sqflite and a socket.
       recordingServiceProvider.overrideWithValue(
         CallRecordingService(
@@ -63,6 +68,7 @@ import '../support/fakes.dart';
     store: store,
     ingest: ingest,
     live: live,
+    schedule: schedule,
   );
 }
 
@@ -700,5 +706,41 @@ void main() {
       'boom',
     );
     expect(scope.container.read(callControllerProvider)?.agreements, isEmpty);
+  });
+
+  test('summary: a completed call auto-loads the итог onto CallState',
+      () async {
+    final scope = buildContainer();
+    addTearDown(scope.container.dispose);
+    final controller = scope.container.read(callControllerProvider.notifier);
+
+    await controller.startOutgoing('+79000000002');
+    scope.voice.emit(const CallSignal(kind: CallSignalKind.answered));
+    await pumpEventQueue();
+
+    await controller.hangup();
+    await pumpEventQueue();
+
+    final call = scope.container.read(callControllerProvider);
+    expect(call?.status, CallLifecycleStatus.completed);
+    expect(call?.callSummary?.agreementsTotal, 2);
+    expect(call?.callSummary?.agreementsConfirmed, 1);
+    expect(call?.callSummary?.summary, isNotEmpty);
+    expect(scope.schedule.summaryCalls, 1);
+  });
+
+  test('summary: loadSummary surfaces the error without touching the call',
+      () async {
+    final scope = buildContainer(
+      scheduleError: const ApiException(ApiErrorKind.network, 'offline'),
+    );
+    addTearDown(scope.container.dispose);
+    final controller = scope.container.read(callControllerProvider.notifier);
+
+    await controller.startOutgoing('+79000000002');
+
+    expect(await controller.loadSummary(), 'offline');
+    expect(scope.container.read(callControllerProvider)?.callSummary, isNull);
+    expect(scope.container.read(callControllerProvider), isNotNull);
   });
 }

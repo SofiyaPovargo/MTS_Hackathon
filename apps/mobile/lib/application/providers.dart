@@ -18,6 +18,7 @@ import '../infrastructure/api/board_api.dart';
 import '../infrastructure/api/call_api.dart';
 import '../infrastructure/api/consent_api.dart';
 import '../infrastructure/api/manager_api.dart';
+import '../infrastructure/api/schedule_api.dart';
 import '../infrastructure/api/sync_api.dart';
 import '../infrastructure/audio/file_audio_recording_store.dart';
 import '../infrastructure/db/app_database.dart';
@@ -38,6 +39,7 @@ import 'consent_controller.dart';
 import 'contacts_controller.dart';
 import 'manager_controller.dart';
 import 'recording_service.dart';
+import 'task_actions_controller.dart';
 
 /// Application wiring. Tests override these providers with fakes; feature code
 /// never constructs infrastructure directly.
@@ -120,6 +122,10 @@ final Provider<ConsentApi> consentApiProvider =
 final Provider<AgreementApi> agreementApiProvider = Provider<AgreementApi>(
   (ref) => HttpAgreementApi(client: ref.watch(apiClientProvider)),
 );
+
+/// Call summary / calendar / reminders / client-message drafts (plan.md §9).
+final Provider<ScheduleApi> scheduleApiProvider =
+    Provider<ScheduleApi>((ref) => HttpScheduleApi(client: ref.watch(apiClientProvider)));
 
 /// Resumable ingest of recorded audio (`POST /calls/{id}/audio`).
 final Provider<AudioIngestApi> audioIngestApiProvider = Provider<AudioIngestApi>(
@@ -216,3 +222,10 @@ final AsyncNotifierProvider<ConsentController, AppConsent> consentControllerProv
 /// watches this provider.
 final NotifierProvider<CallController, CallState?> callControllerProvider =
     NotifierProvider<CallController, CallState?>(CallController.new);
+
+/// Calendar / reminder / client-draft actions on the personal board (plan.md §9).
+final NotifierProvider<TaskActionsController, TaskActionsState>
+    taskActionsControllerProvider =
+    NotifierProvider<TaskActionsController, TaskActionsState>(
+  TaskActionsController.new,
+);

@@ -243,6 +243,33 @@ missed), `dial`, `answer`, `decline`, `hangup`, `setMuted`. Платформен
   приоритету. Тип выбирается из значений, встречающихся в загруженных задачах
   (в API нет списка типов).
 
+## Итог звонка, календарь и напоминания (Этап 9)
+
+Контракт описан в `domain/schedule.dart`, порт — `ScheduleApi` в
+`domain/ports.dart`, адаптер — `infrastructure/api/schedule_api.dart`, DI —
+`providers.dart` (`scheduleApiProvider`, `taskActionsControllerProvider`).
+Все записи во внешние системы — только после явного подтверждения; черновик
+клиенту **не отправляется автоматически** (правило продукта).
+
+- **Итог звонка** (`GET /calls/{id}/summary`, владелец): `CallController.loadSummary()`
+  кладёт `CallSummary` в `CallState`; вызывается автоматически на терминальном
+  статусе и по кнопке в live-карточке (`ui/screens/call_screen.dart`, блок
+  «Сводка»: текст + счётчики договорённостей). Ошибка/офлайн — тихо, без потери UI.
+- **Действия по задаче** (`ui/screens/task_actions_sheet.dart`), каждое через
+  диалог подтверждения (`application/task_actions_controller.dart`):
+  - «Добавить в календарь» → `POST /tasks/{id}/calendar`, показывается время события;
+  - «Удалить из календаря» → `DELETE /tasks/{id}/calendar`; эндпоинта пока нет на
+    backend (трек C) — 404/405 обрабатывается мягко («пока недоступно»), без падения;
+  - «Черновик клиенту» → `POST /tasks/{id}/message-draft`, текст показывается в
+    диалоге с кнопкой «Копировать» и пометкой «не отправляется автоматически»
+    (Flutter `Clipboard`, без новых зависимостей);
+  - «Напоминание» → `POST /tasks/{id}/reminders` из пресетов (через час/сегодня
+    19:00/завтра 9:00);
+  - `GET /tasks/{id}/reminders`, `POST /reminders/{id}/cancel` — доступны в порту.
+- **Формат даты/времени**: `formatDateTime` в `ui/formats.dart` (локаль устройства).
+- **Ещё не сделано** (не трек A): `.ics`-шаринг в виджете (порт `ics()` готов),
+  список/отмена напоминаний в UI, «перейти к звонку-источнику».
+
 ## Вход
 
 OTP-поток: `POST /auth/otp/request` → `POST /auth/login`. В dev-режиме OTP
