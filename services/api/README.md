@@ -14,9 +14,9 @@ Layered per `AGENTS.md`:
 src/app/
   api/            HTTP routes, WebSocket endpoint, schemas (Pydantic v2), dependencies
   domain/         entities, enums, state machine, date/commitment rules (no IO)
-  services/       auth, call session, consent, agreement, task, schedule, sync, manager, data deletion, events
+  services/       auth, call session, consent, agreement, task, schedule, notifications, sync, manager, data deletion, events
   infrastructure/ SQLAlchemy models/repositories, Redis cache, JWT, S3 storage
-  integrations/   external ports: VoiceProviderPort (mock + Exolve adapter), calendar/reminders/messaging
+  integrations/   external ports: VoiceProviderPort (mock + Exolve adapter), calendar/reminders/messaging, push (notifications)
   ml/             research layer: ASR (T-one client), diarization (pyannote), STT pipeline
   migrations/     Alembic migrations
   worker.py       Celery entrypoint (queues: asr, ai, asr-live, ai-live, notifications)
@@ -100,6 +100,7 @@ All settings come from the environment (`.env`, see `.env.example`). Key ones:
 | `CALENDAR_PROVIDER`   | ics                  | `ics` (in-app artifact)                   |
 | `REMINDERS_PROVIDER`  | local                | `local`                                   |
 | `MESSAGING_PROVIDER`  | draft                | `draft` (never sends)                     |
+| `PUSH_PROVIDER`       | null                 | reminder push delivery: `null` (logs + reports success); FCM/APNs adapters are add-ons |
 | `ASR_WS_URL`          | `ws://localhost:8080/api/ws` | T-one streaming ASR WebSocket  |
 | `HF_TOKEN`            | —                    | read-only Hugging Face token (pyannote)   |
 | `DATA_DIR`            | `data`               | `data/audio`, `data/transcripts` for STT CLI |
@@ -161,12 +162,13 @@ Tasks
 
 | method | path                    | notes                               |
 | ------ | ----------------------- | ----------------------------------- |
-| GET    | `/me/tasks`             | personal board (§14): `view=today\|overdue\|upcoming\|done\|all`, plus `status`/`priority`/`due_before`/`due_after` |
+| GET    | `/me/tasks`             | personal board (§14): `view=today\|overdue\|upcoming\|done\|all`, plus `status`/`priority`/`due_before`/`due_after`; each card carries `call_id` (source call) and `calendar_event_id` |
 | PATCH  | `/tasks/{id}`           | edit (status transitions validated) |
 | POST   | `/tasks/{id}/complete`  | mark done                           |
 | POST   | `/tasks/{id}/calendar`  | write the task into the calendar (explicit action) |
 | GET    | `/tasks/{id}/calendar.ics` | portable `.ics` download         |
-| POST   | `/tasks/{id}/reminders` | schedule a reminder (`remind_at` in the future) |
+| DELETE | `/tasks/{id}/calendar`  | remove the task's calendar event (port); 204, 404 if none |
+| POST   | `/tasks/{id}/reminders` | schedule a reminder (`remind_at` in the future; `push` jobs are queued for `remind_at`) |
 | GET    | `/tasks/{id}/reminders` | list reminders for the task         |
 | POST   | `/reminders/{id}/cancel` | cancel a reminder                  |
 | POST   | `/tasks/{id}/message-draft` | draft a client message — never sent |
@@ -484,6 +486,13 @@ Celery, one image, separate queues (`worker-asr`, `worker-ai`, `worker-asr-live`
 retention purge (`purge_expired_audio`); `POST /me/data/delete` enqueues
 `request_data_deletion`. Both run against `services/data_deletion.py`.
 
+`worker-notifications` also runs `send_reminder`: creating a `push` reminder
+queues the job for `remind_at` (ETA), and the worker delivers it through the
+`PushPort` (`integrations/notifications.py`) and marks the reminder
+`sent`/`failed`. Delivery is idempotent by reminder status — a redelivered job
+never notifies twice. Real FCM/APNs adapters are add-ons behind the port; the
+default `NullPush` logs and reports success.
+
 ## Tests
 
 ```bash
@@ -503,14 +512,18 @@ sync idempotency, OTP login + refresh rotation + logout, consent notice/DTMF
 /withdrawal, agreement confirm→task, PATCH guards, cross-team 403s, the
 T-one ASR client protocol, the STT speaker/role merge, the WebSocket event
 stream (auth, ownership, replay, live delivery), the confirmed-only
-calendar/reminder/draft side effects (future-only reminders, draft never sent),
-and the МТС Exolve adapter (event mapping, routing body, Call Record API,
-notice/DTMF behaviour).
+calendar/reminder/draft side effects (future-only reminders, draft never sent,
+calendar event stored and deleted, the task→call link), reminder delivery
+(queued with ETA, idempotent, provider failure → `failed`), and the МТС Exolve
+adapter (event mapping, routing body, Call Record API, notice/DTMF behaviour).
 
 ## Roadmap
 
 Stage order follows `plan.md`: this is Stage 2 (plus research ML groundwork and
 the Track C voice/integration increments). Staged placeholders: wiring the ML
-pipeline into the workers (Stage 6), real third-party calendar/reminder
-adapters, the Exolve call-control/event webhook routes and end-to-end call
-wiring (`plan.md` §11.1), and the mobile app (Stage 3+).
+pipeline into the workers (Stage 6), real third-party calendar/reminder adapters
+(OAuth Google/Microsoft) and FCM/APNs push, LLM recognition of a cancellation/
+reschedule of a previously fixed agreement via a new call (delete/reschedule is
+already exposed through `DELETE /tasks/{id}/calendar`), the Exolve call-control/
+event webhook routes and end-to-end call wiring on a live stand (`plan.md`
+§11.1), and the mobile app (Stage 3+).

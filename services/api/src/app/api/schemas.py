@@ -253,6 +253,7 @@ class TaskOut(BaseModel):
 
     id: uuid.UUID
     agreement_id: uuid.UUID | None
+    call_id: uuid.UUID | None = None
     assignee_user_id: uuid.UUID
     title: str
     description: str | None
@@ -261,6 +262,7 @@ class TaskOut(BaseModel):
     priority: TaskPriority
     status: TaskStatus
     completed_at: datetime | None
+    calendar_event_id: str | None = None
     version: int
     created_at: datetime
     updated_at: datetime

@@ -37,7 +37,7 @@ from app.domain.errors import (
     ValidationFailed,
 )
 from app.infrastructure.db import repositories
-from app.infrastructure.db.models import User
+from app.infrastructure.db.models import Task, User
 from app.services.agreement import AgreementService
 from app.services.audio_ingest import AudioIngestService, AudioUpload, parse_content_range
 from app.services.auth import AuthService
@@ -51,6 +51,13 @@ from app.services.task import TaskService
 from app.services.voice_webhooks import ExolveWebhookService
 
 router = APIRouter()
+
+
+def _task_out(task: Task, call_id: uuid.UUID | None) -> schemas.TaskOut:
+    """Serialize a task, attaching the source call resolved from its agreement."""
+    return schemas.TaskOut.model_validate(task, from_attributes=True).model_copy(
+        update={"call_id": call_id}
+    )
 
 
 # ---- auth -------------------------------------------------------------------
@@ -536,7 +543,8 @@ async def list_my_tasks(
         due_before=due_before,
         due_after=due_after,
     )
-    return [schemas.TaskOut.model_validate(task, from_attributes=True) for task in rows]
+    call_ids = await tasks.call_ids_for(rows)
+    return [_task_out(task, call_ids.get(task.id)) for task in rows]
 
 
 @router.patch("/tasks/{task_id}", response_model=schemas.TaskOut)
@@ -553,7 +561,8 @@ async def patch_task(
         raise ValidationFailed("no fields to update")
     task = await tasks.patch(user, task, changes)
     await session.commit()
-    return schemas.TaskOut.model_validate(task, from_attributes=True)
+    call_ids = await tasks.call_ids_for([task])
+    return _task_out(task, call_ids.get(task.id))
 
 
 @router.post("/tasks/{task_id}/complete", response_model=schemas.TaskOut)
@@ -566,7 +575,8 @@ async def complete_task(
     task = await tasks.get_for_user(user, task_id)
     task = await tasks.complete(user, task)
     await session.commit()
-    return schemas.TaskOut.model_validate(task, from_attributes=True)
+    call_ids = await tasks.call_ids_for([task])
+    return _task_out(task, call_ids.get(task.id))
 
 
 # ---- calendar / reminders / draft (only after confirmation) ---------------------
@@ -602,6 +612,21 @@ async def download_task_ics(
         media_type="text/calendar",
         headers={"Content-Disposition": f'attachment; filename="task-{task.id}.ics"'},
     )
+
+
+@router.delete("/tasks/{task_id}/calendar", status_code=204)
+async def delete_task_calendar_event(
+    task_id: uuid.UUID,
+    user: User = Depends(get_current_user),
+    session: AsyncSession = Depends(get_session),
+    tasks: TaskService = Depends(get_task_service),
+    schedule: ScheduleService = Depends(get_schedule_service),
+) -> Response:
+    """Explicit user action: remove the task's calendar event (port)."""
+    task = await tasks.get_for_user(user, task_id)
+    await schedule.delete_calendar_event(user, task)
+    await session.commit()
+    return Response(status_code=204)
 
 
 @router.post("/tasks/{task_id}/reminders", response_model=schemas.ReminderOut, status_code=201)

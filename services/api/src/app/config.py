@@ -69,6 +69,9 @@ class Settings(BaseSettings):
     calendar_provider: str = Field(default="ics", alias="CALENDAR_PROVIDER")
     reminders_provider: str = Field(default="local", alias="REMINDERS_PROVIDER")
     messaging_provider: str = Field(default="draft", alias="MESSAGING_PROVIDER")
+    # Push delivery for reminders (worker-notifications). Real FCM/APNs adapters
+    # are added later; ``null`` logs and reports success.
+    push_provider: str = Field(default="null", alias="PUSH_PROVIDER")
 
     # МТС Exolve (plan.md §11.1). Empty credentials keep the mock path usable.
     exolve_api_base_url: str = Field(default="https://api.exolve.ru", alias="EXOLVE_API_BASE_URL")

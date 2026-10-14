@@ -25,6 +25,8 @@ class CalendarPort(Protocol):
         notes: str | None,
     ) -> str: ...
 
+    async def delete_event(self, *, event_id: str) -> None: ...
+
 
 class NullCalendar:
     async def create_event(
@@ -36,6 +38,11 @@ class NullCalendar:
         notes: str | None,
     ) -> str:
         return f"cal-{uuid.uuid4().hex[:12]}"
+
+    async def delete_event(self, *, event_id: str) -> None:
+        # The in-app calendar artifact (and the ``Null`` adapter) has nothing
+        # external to delete; a real adapter removes the provider-side event.
+        return None
 
 
 def make_ics_event(*, title: str, starts_at: datetime, ends_at: datetime | None, notes: str | None) -> str:

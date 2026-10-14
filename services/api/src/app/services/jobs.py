@@ -9,6 +9,7 @@ trigger ASR / extraction while staying light.
 from __future__ import annotations
 
 import logging
+from datetime import datetime
 from typing import Protocol
 
 from celery import Celery
@@ -22,6 +23,7 @@ AI_TASK = "run_llm_extraction"
 LIVE_ASR_TASK = "stream_asr"
 DATA_DELETION_TASK = "request_data_deletion"
 RECORDING_TASK = "download_recording"
+REMINDER_TASK = "send_reminder"
 
 
 class AnalysisQueuePort(Protocol):
@@ -32,6 +34,7 @@ class AnalysisQueuePort(Protocol):
     def enqueue_live_asr(self, call_id: str) -> None: ...
     def enqueue_data_deletion(self, user_id: str) -> None: ...
     def enqueue_recording_download(self, call_id: str) -> None: ...
+    def enqueue_reminder(self, reminder_id: str, *, eta: datetime) -> None: ...
 
 
 class NullAnalysisQueue:
@@ -50,6 +53,9 @@ class NullAnalysisQueue:
         return None
 
     def enqueue_recording_download(self, call_id: str) -> None:
+        return None
+
+    def enqueue_reminder(self, reminder_id: str, *, eta: datetime) -> None:
         return None
 
 
@@ -87,6 +93,15 @@ class CeleryAnalysisQueue:
 
     def enqueue_recording_download(self, call_id: str) -> None:
         self._send(RECORDING_TASK, "asr", call_id)
+
+    def enqueue_reminder(self, reminder_id: str, *, eta: datetime) -> None:
+        # ETA defers delivery until ``remind_at``; the worker re-checks the status.
+        try:
+            self._client().send_task(
+                REMINDER_TASK, args=[reminder_id], queue="notifications", eta=eta
+            )
+        except Exception:  # best-effort trigger
+            logger.warning("could not enqueue reminder %s", reminder_id, exc_info=True)
 
     def _send(self, task: str, queue: str, call_id: str) -> None:
         try:

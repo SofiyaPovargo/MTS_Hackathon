@@ -91,6 +91,7 @@ def get_schedule_service(
         calendar=request.app.state.calendar,
         reminders=request.app.state.reminders,
         messaging=request.app.state.messaging,
+        jobs=request.app.state.analysis_queue,
     )
 
 

@@ -24,10 +24,11 @@ backend — `cd services/api && uv run ruff check . && uv run mypy . && uv run p
       CallKit/PushKit (iOS), Telecom/ConnectionService (Android), реальные входящие,
       реальная запись медиапотока за `VoiceCallProvider.openMediaStream()` и
       проигрывание notice. Сейчас — `MockVoiceCallProvider`.
-- [ ] **«К звонку-источнику» на личной доске** — фича готова, но ждёт `call_id`
-      в `TaskOut`/sync (трек C, Mav; у `ManagerTaskOut` уже есть).
+- [ ] **«К звонку-источнику» на личной доске** — backend готов: `call_id` есть
+      в `TaskOut` и в sync-элементе `task` (трек C, Mav). Осталось только
+      использовать поле в UI.
 - [ ] **Удаление события календаря** — UI готов, мягкий fallback 404/405 стоит;
-      включится после `DELETE /tasks/{id}/calendar` (трек C, Mav).
+      backend готов: `DELETE /tasks/{id}/calendar` (трек C, Mav).
 - [ ] *(опц.)* Системный share sheet для `.ics`/черновика (`share_plus`) — сейчас
       копирование через `Clipboard` (без новых зависимостей).
 - [ ] *(опц.)* FCM/APNs-клиент для напоминаний и `analysis_started`.
@@ -35,19 +36,25 @@ backend — `cd services/api && uv run ruff check . && uv run mypy . && uv run p
 
 ## Mav — backend и интеграции (трек C)
 
-- [ ] **Удаление календарных договорённостей** (`plan.md` §12–14):
-      `CalendarPort.delete_event()` + `DELETE /tasks/{id}/calendar`, хранить
-      `event_id` (сейчас только в `audit_log`), писать `audit_log`; распознавание
-      **отмены/переноса** в разговоре (LLM + сопоставление с существующей
-      договорённостью) → предложение (внешняя запись — **только после подтверждения**).
-- [ ] **`call_id` в `TaskOut`/sync** (личная доска) — разблокирует «К звонку-источнику»
-      в мобильном приложении (у `ManagerTaskOut` уже есть).
-- [ ] **Реальные адаптеры** `CalendarPort`/`RemindersPort` (OAuth Google/Microsoft)
-      вместо `Null*`; постановка `send_reminder` в очередь + воркер
-      `worker-notifications` (FCM/APNs).
+- [x] **Удаление календарных договорённостей** (`plan.md` §12–14):
+      `CalendarPort.delete_event()` + `DELETE /tasks/{id}/calendar`, `event_id`
+      теперь хранится в `tasks.calendar_event_id` (миграция `c4d7e18f5a62`),
+      пишется `audit_log`; тесты удаления/404/cross-user/аудита.
+      *(осталось, ML)* распознавание **отмены/переноса** в разговоре
+      (LLM + сопоставление с существующей договорённостью) → предложение;
+      эндпоинт удаления и порт уже готовы, клиент может ими воспользоваться.
+- [x] **`call_id` в `TaskOut`/sync** (личная доска) — добавлен в `TaskOut`
+      (`call_id`, `calendar_event_id`) и в sync-элемент `task`; разблокирует
+      «К звонку-источнику» в мобильном приложении.
+- [x] **Плумбинг напоминаний**: `POST /tasks/{id}/reminders` для `push`-канала
+      ставит `send_reminder` в очередь с ETA=`remind_at`; `worker-notifications`
+      доставляет через `PushPort` (`integrations/notifications.py`, `NullPush`)
+      и переводит в `sent`/`failed`; доставка идемпотентна. `PUSH_PROVIDER`.
+      *(осталось, внешние ключи)* реальные адаптеры `CalendarPort`/`RemindersPort`
+      (OAuth Google/Microsoft) и `PUSH_PROVIDER=fcm|apns` — skeleton за портами.
 - [ ] **Боевой voice-провайдер Exolve**: прод-режим (`EXOLVE_API_KEY`,
-      `PUBLIC_BASE_URL`), DTMF-согласие, сквозная проверка
-      notice → запись → ASR на стенде.
+      `PUBLIC_BASE_URL`) и DTMF уже реализованы; *(нужен стенд)* сквозная
+      проверка notice → запись → ASR.
 - [ ] *(опц.)* sync-сущность `call`/`recording` (сейчас клиент использует выделенные
       вызовы §13); подъём на VPS (`docker-compose.prod.yml`, `docs/deploy.md` готовы)
       — нужен стенд/DNS/TLS.
@@ -56,8 +63,9 @@ backend — `cd services/api && uv run ruff check . && uv run mypy . && uv run p
 
 - [x] LLM (Ollama `qwen2.5:7b`), live-ASR/VAD (T-one + Silero), детерминированные
       даты, приватность: удаление данных, retention-пурж, redaction.
-- [ ] *(вне трека B, опц.)* напоминания-воркер `send_reminder`; резюме через LLM
-      вместо детерминированного `summary.py`.
+- [x] напоминания-воркер `send_reminder` — реализован в треке C (очередь + воркер +
+      `PushPort`); см. выше.
+- [ ] *(вне трека B, опц.)* резюме через LLM вместо детерминированного `summary.py`.
 
 ## Тестирование и демо (вся команда)
 

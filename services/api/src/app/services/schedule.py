@@ -19,6 +19,7 @@ from app.domain.errors import NotFound, ValidationFailed
 from app.infrastructure.db import repositories
 from app.infrastructure.db.models import Agreement, Call, Reminder, Task, User
 from app.integrations.outbound import CalendarPort, MessagingPort, RemindersPort, make_ics_event
+from app.services.jobs import AnalysisQueuePort
 
 DEFAULT_EVENT_DURATION = timedelta(minutes=30)
 DEFAULT_EVENT_TIME = time(9, 0)
@@ -59,11 +60,13 @@ class ScheduleService:
         calendar: CalendarPort,
         reminders: RemindersPort,
         messaging: MessagingPort,
+        jobs: AnalysisQueuePort | None = None,
     ) -> None:
         self._session = session
         self._calendar = calendar
         self._reminders = reminders
         self._messaging = messaging
+        self._jobs = jobs
 
     # -- guards ---------------------------------------------------------------
 
@@ -94,6 +97,7 @@ class ScheduleService:
             ends_at=ends_at,
             notes=f"Из звонка: {agreement.source_quote}",
         )
+        task.calendar_event_id = event_id
         await repositories.record_audit(
             self._session,
             entity_type="task",
@@ -110,6 +114,28 @@ class ScheduleService:
             "starts_at": starts_at,
             "ends_at": ends_at,
         }
+
+    async def delete_calendar_event(self, user: User, task: Task) -> str:
+        """Remove a previously created calendar event (explicit user action).
+
+        Only the event stored on the task is touched; nothing is deleted in an
+        external system without this call, which the user triggers.
+        """
+        event_id = task.calendar_event_id
+        if event_id is None:
+            raise NotFound("task has no calendar event")
+        await self._calendar.delete_event(event_id=event_id)
+        task.calendar_event_id = None
+        await repositories.record_audit(
+            self._session,
+            entity_type="task",
+            entity_id=task.id,
+            action="task.calendar_deleted",
+            actor_user_id=user.id,
+            payload={"event_id": event_id},
+        )
+        await self._session.flush()
+        return event_id
 
     async def ics(self, user: User, task: Task) -> str:
         """Deterministic ``.ics`` the user can import without any integration."""
@@ -145,6 +171,9 @@ class ScheduleService:
         self._session.add(reminder)
         await self._session.flush()
         external_id = await self._reminders.create_reminder(task=task, remind_at=normalized)
+        if channel is ReminderChannel.push and self._jobs is not None:
+            # Queue the push for ``remind_at``; the worker delivers it (FCM/APNs).
+            self._jobs.enqueue_reminder(str(reminder.id), eta=normalized)
         await repositories.record_audit(
             self._session,
             entity_type="task",
