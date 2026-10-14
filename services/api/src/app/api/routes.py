@@ -45,6 +45,7 @@ from app.services.call_session import CallSessionService, get_call_or_404
 from app.services.consent import ConsentService
 from app.services.manager import ManagerDashboardService
 from app.services.schedule import ScheduleService
+from app.services.summary import CallSummaryService
 from app.services.sync import SyncService
 from app.services.task import TaskService
 from app.services.voice_webhooks import ExolveWebhookService
@@ -174,6 +175,25 @@ async def get_call(
     call = await get_call_or_404(session, call_id)
     await _require_call_owner(user, call.user_id)
     return schemas.CallOut.model_validate(call, from_attributes=True)
+
+
+@router.get("/calls/{call_id}/summary", response_model=schemas.CallSummaryOut)
+async def get_call_summary(
+    call_id: uuid.UUID,
+    user: User = Depends(get_current_user),
+    session: AsyncSession = Depends(get_session),
+) -> schemas.CallSummaryOut:
+    """Итог звонка (§9): резюме разговора и счётчики договорённостей.
+
+    Владелец звонка. Текст — производная от договорённостей, поэтому он
+    пересобирается на чтение (правка/подтверждение не оставляют устаревший итог).
+    Менеджер итог и договорённости подчинённого не получает.
+    """
+    call = await get_call_or_404(session, call_id)
+    await _require_call_owner(user, call.user_id)
+    result = await CallSummaryService(session).summary_for(call)
+    await session.commit()
+    return schemas.CallSummaryOut.model_validate(result)
 
 
 @router.post(

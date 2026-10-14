@@ -94,6 +94,15 @@ class CallAnalyzeResponse(BaseModel):
     status: str
 
 
+class CallSummaryOut(BaseModel):
+    """Итог звонка (§9): резюме разговора и счётчики договорённостей."""
+
+    call_id: uuid.UUID
+    summary: str
+    agreements_total: int
+    agreements_confirmed: int
+
+
 class CallAudioAccepted(BaseModel):
     """Stored client audio (a whole object or one resumable chunk).
 

@@ -221,6 +221,13 @@ async def test_pipeline_roles_persistence_and_idempotency(
     assert extractor.calls == 1
     assert any(message.event == "agreement_detected" for message in events.messages)
 
+    # Итог звонка (§9) собран детерминированно из валидированных договорённостей.
+    async with session_factory() as session:
+        call_row = await repositories.get_call(session, call_id)
+        assert call_row is not None and call_row.summary
+        assert "Прислать договор" in call_row.summary
+        assert "на клиента" in call_row.summary
+
     # Повторное извлечение — no-op (LLM не вызывается снова).
     async with session_factory() as session:
         again = await extract_and_store(
