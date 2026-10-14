@@ -17,6 +17,12 @@ String taskStatusLabel(TaskStatus status) => switch (status) {
       TaskStatus.canceled => 'Отменена',
     };
 
+String taskPriorityLabel(TaskPriority priority) => switch (priority) {
+      TaskPriority.low => 'Низкий',
+      TaskPriority.medium => 'Средний',
+      TaskPriority.high => 'Высокий',
+    };
+
 String callStatusLabel(CallLifecycleStatus status) => switch (status) {
       CallLifecycleStatus.incoming => 'Входящий вызов',
       CallLifecycleStatus.ringing => 'Вызов…',

@@ -149,6 +149,128 @@ class TaskItem {
         'created_at': createdAt?.toIso8601String(),
         'updated_at': updatedAt?.toIso8601String(),
       };
+
+  TaskItem copyWith({
+    String? title,
+    String? description,
+    String? assigneeUserId,
+    String? agreementId,
+    TaskPriority? priority,
+    TaskStatus? status,
+    DateTime? dueDate,
+    String? dueTime,
+    DateTime? completedAt,
+    int? version,
+    DateTime? createdAt,
+    DateTime? updatedAt,
+  }) {
+    return TaskItem(
+      id: id,
+      title: title ?? this.title,
+      description: description ?? this.description,
+      assigneeUserId: assigneeUserId ?? this.assigneeUserId,
+      agreementId: agreementId ?? this.agreementId,
+      priority: priority ?? this.priority,
+      status: status ?? this.status,
+      dueDate: dueDate ?? this.dueDate,
+      dueTime: dueTime ?? this.dueTime,
+      completedAt: completedAt ?? this.completedAt,
+      version: version ?? this.version,
+      createdAt: createdAt ?? this.createdAt,
+      updatedAt: updatedAt ?? this.updatedAt,
+    );
+  }
+}
+
+/// Editable task fields (`PATCH /tasks/{id}` / `/sync` push payload). `null`
+/// means "not provided" — the server only applies present fields.
+class TaskPatch {
+  const TaskPatch({
+    this.title,
+    this.description,
+    this.dueDate,
+    this.dueTime,
+    this.priority,
+    this.status,
+  });
+
+  final String? title;
+  final String? description;
+  final DateTime? dueDate;
+  final String? dueTime;
+  final TaskPriority? priority;
+  final TaskStatus? status;
+
+  Map<String, Object?> toJson() => <String, Object?>{
+        if (title != null) 'title': title,
+        if (description != null) 'description': description,
+        if (dueDate != null) 'due_date': formatDateOnly(dueDate),
+        if (dueTime != null) 'due_time': dueTime,
+        if (priority != null) 'priority': priority!.wire,
+        if (status != null) 'status': status!.wire,
+      };
+}
+
+/// A team member of the manager's team (`/manager/team/members`).
+class TeamMember {
+  const TeamMember({
+    required this.id,
+    required this.phone,
+    required this.fullName,
+    required this.role,
+  });
+
+  factory TeamMember.fromJson(Map<String, dynamic> json) => TeamMember(
+        id: json['id'] as String,
+        phone: json['phone'] as String,
+        fullName: json['full_name'] as String,
+        role: Role.fromWire(json['role'] as String),
+      );
+
+  final String id;
+  final String phone;
+  final String fullName;
+  final Role role;
+}
+
+/// Team analytics (`/manager/team/stats`).
+class TeamStats {
+  const TeamStats({
+    required this.membersCount,
+    required this.tasksTotal,
+    required this.tasksByStatus,
+    required this.overdue,
+    required this.doneOnTime,
+    required this.doneOnTimePercent,
+    this.avgCloseHours,
+    required this.tasksFromCallsPercent,
+  });
+
+  factory TeamStats.fromJson(Map<String, dynamic> json) => TeamStats(
+        membersCount: (json['members_count'] as num?)?.toInt() ?? 0,
+        tasksTotal: (json['tasks_total'] as num?)?.toInt() ?? 0,
+        tasksByStatus: <String, int>{
+          for (final entry in (json['tasks_by_status'] as Map<String, dynamic>? ?? const {})
+              .entries)
+            entry.key: (entry.value as num).toInt(),
+        },
+        overdue: (json['overdue'] as num?)?.toInt() ?? 0,
+        doneOnTime: (json['done_on_time'] as num?)?.toInt() ?? 0,
+        doneOnTimePercent: (json['done_on_time_percent'] as num?)?.toDouble() ?? 0,
+        avgCloseHours: (json['avg_close_hours'] as num?)?.toDouble(),
+        tasksFromCallsPercent: (json['tasks_from_calls_percent'] as num?)?.toDouble() ?? 0,
+      );
+
+  final int membersCount;
+  final int tasksTotal;
+  final Map<String, int> tasksByStatus;
+  final int overdue;
+  final int doneOnTime;
+  final double doneOnTimePercent;
+  final double? avgCloseHours;
+  final double tasksFromCallsPercent;
+
+  int statusCount(TaskStatus status) => tasksByStatus[status.wire] ?? 0;
 }
 
 class Agreement {

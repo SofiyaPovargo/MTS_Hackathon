@@ -11,6 +11,7 @@ import '../infrastructure/api/auth_api.dart';
 import '../infrastructure/api/board_api.dart';
 import '../infrastructure/api/call_api.dart';
 import '../infrastructure/api/consent_api.dart';
+import '../infrastructure/api/manager_api.dart';
 import '../infrastructure/api/sync_api.dart';
 import '../infrastructure/db/app_database.dart';
 import '../infrastructure/db/consent_store.dart';
@@ -27,6 +28,7 @@ import 'board_controller.dart';
 import 'call_controller.dart';
 import 'consent_controller.dart';
 import 'contacts_controller.dart';
+import 'manager_controller.dart';
 
 /// Application wiring. Tests override these providers with fakes; feature code
 /// never constructs infrastructure directly.
@@ -77,6 +79,9 @@ final Provider<AuthApi> authApiProvider = Provider<AuthApi>(
 
 final Provider<BoardApi> boardApiProvider =
     Provider<BoardApi>((ref) => HttpBoardApi(client: ref.watch(apiClientProvider)));
+
+final Provider<ManagerApi> managerApiProvider =
+    Provider<ManagerApi>((ref) => HttpManagerApi(client: ref.watch(apiClientProvider)));
 
 final Provider<SyncApi> syncApiProvider =
     Provider<SyncApi>((ref) => HttpSyncApi(client: ref.watch(apiClientProvider)));
@@ -130,6 +135,11 @@ final AsyncNotifierProvider<AuthController, AuthSession?> authControllerProvider
 
 final AsyncNotifierProvider<BoardController, List<TaskItem>> boardControllerProvider =
     AsyncNotifierProvider<BoardController, List<TaskItem>>(BoardController.new);
+
+/// Manager board (team tasks, analytics, members). Only read for a manager; the
+/// server enforces the role and team membership.
+final AsyncNotifierProvider<ManagerController, ManagerBoard> managerControllerProvider =
+    AsyncNotifierProvider<ManagerController, ManagerBoard>(ManagerController.new);
 
 final AsyncNotifierProvider<ContactsController, ContactsState> contactsControllerProvider =
     AsyncNotifierProvider<ContactsController, ContactsState>(ContactsController.new);

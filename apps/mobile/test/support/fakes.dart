@@ -43,18 +43,53 @@ TaskItem testTask({
   TaskStatus status = TaskStatus.newTask,
   TaskPriority priority = TaskPriority.medium,
   DateTime? dueDate,
+  String? description,
+  String? agreementId,
   int version = 1,
 }) {
   return TaskItem(
     id: id,
     title: title,
+    description: description,
     assigneeUserId: '11111111-1111-1111-1111-111111111111',
+    agreementId: agreementId,
     priority: priority,
     status: status,
     dueDate: dueDate,
     version: version,
     createdAt: DateTime.utc(2026, 10),
     updatedAt: DateTime.utc(2026, 10),
+  );
+}
+
+TeamMember testMember({
+  String id = '11111111-1111-1111-1111-111111111111',
+  String phone = '+79000000002',
+  String fullName = 'Анна',
+  Role role = Role.user,
+}) {
+  return TeamMember(id: id, phone: phone, fullName: fullName, role: role);
+}
+
+TeamStats testStats({
+  int membersCount = 2,
+  int tasksTotal = 5,
+  Map<String, int> tasksByStatus = const <String, int>{'new': 2, 'done': 2, 'overdue': 1},
+  int overdue = 1,
+  int doneOnTime = 2,
+  double doneOnTimePercent = 100,
+  double? avgCloseHours = 12.5,
+  double tasksFromCallsPercent = 80,
+}) {
+  return TeamStats(
+    membersCount: membersCount,
+    tasksTotal: tasksTotal,
+    tasksByStatus: tasksByStatus,
+    overdue: overdue,
+    doneOnTime: doneOnTime,
+    doneOnTimePercent: doneOnTimePercent,
+    avgCloseHours: avgCloseHours,
+    tasksFromCallsPercent: tasksFromCallsPercent,
   );
 }
 
@@ -176,6 +211,60 @@ class FakeBoardApi implements BoardApi {
 
   @override
   Future<List<Agreement>> fetchMyAgreements() async => agreements;
+}
+
+/// Controllable [ManagerApi]: records the filter arguments and returns canned
+/// team data, so the controller and board can be tested without a server.
+class FakeManagerApi implements ManagerApi {
+  FakeManagerApi({
+    this.tasks = const <TaskItem>[],
+    TeamStats? stats,
+    this.members = const <TeamMember>[],
+    this.error,
+  }) : stats = stats ?? testStats();
+
+  List<TaskItem> tasks;
+  TeamStats stats;
+  List<TeamMember> members;
+  ApiException? error;
+
+  String? lastUserId;
+  String? lastStatus;
+  DateTime? lastDueBefore;
+  int taskCalls = 0;
+  int statsCalls = 0;
+  int memberCalls = 0;
+
+  @override
+  Future<List<TaskItem>> fetchTeamTasks({
+    String? userId,
+    String? status,
+    DateTime? dueBefore,
+  }) async {
+    taskCalls++;
+    lastUserId = userId;
+    lastStatus = status;
+    lastDueBefore = dueBefore;
+    final failure = error;
+    if (failure != null) throw failure;
+    return tasks;
+  }
+
+  @override
+  Future<TeamStats> fetchTeamStats() async {
+    statsCalls++;
+    final failure = error;
+    if (failure != null) throw failure;
+    return stats;
+  }
+
+  @override
+  Future<List<TeamMember>> fetchTeamMembers() async {
+    memberCalls++;
+    final failure = error;
+    if (failure != null) throw failure;
+    return members;
+  }
 }
 
 class FakeSyncApi implements SyncApi {

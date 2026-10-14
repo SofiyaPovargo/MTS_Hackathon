@@ -41,6 +41,22 @@ abstract class BoardApi {
   Future<List<Agreement>> fetchMyAgreements();
 }
 
+/// Manager dashboard (`/manager/team/*`). Team data is never persisted locally
+/// (AGENTS: the phone stores only the user's own data), so the manager board
+/// keeps it in memory and re-fetches on refresh. The server re-checks the role
+/// and team membership on every call.
+abstract class ManagerApi {
+  Future<List<TaskItem>> fetchTeamTasks({
+    String? userId,
+    String? status,
+    DateTime? dueBefore,
+  });
+
+  Future<TeamStats> fetchTeamStats();
+
+  Future<List<TeamMember>> fetchTeamMembers();
+}
+
 abstract class SyncApi {
   Future<SyncPullResult> pull({String? since});
 
