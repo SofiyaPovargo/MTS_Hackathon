@@ -826,10 +826,15 @@ POST /sync
 ### Задачи пользователя
 
 ```http
-GET /me/tasks?status=active
+GET /me/tasks?view=all|today|overdue|upcoming|done&status=&priority=&due_before=&due_after=
 PATCH /tasks/{task_id}
 POST /tasks/{task_id}/complete
 ```
+
+- `view` — срез личной доски (§14): `today` (срок сегодня), `overdue`,
+  `upcoming` (срок позже сегодня), `done`, `all`. Дополнительно фильтры
+  `status`, `priority`, `due_before`/`due_after`. `overdue` вычисляется на
+  сервере от текущей даты, а не хранится вручную.
 
 ### Договорённости (жизненный цикл, включая подтверждённые)
 
@@ -871,10 +876,23 @@ POST /tasks/{task_id}/message-draft   # черновик клиенту, sent: f
 ### Доска менеджера
 
 ```http
-GET /manager/team/tasks?user_id=&status=&due_before=
+GET /manager/team/tasks?user_id=&status=&priority=&task_type=&due_before=&due_after=&sort=
 GET /manager/team/stats
 GET /manager/team/members
 ```
+
+- Фильтры доски (§15): сотрудник, статус (в т.ч. вычисляемый `overdue`),
+  приоритет, тип задачи (`task_type` — тип договорённости), срок (`due_before`
+  / `due_after`). Сортировка `sort=overdue|due_date|priority|created`; по
+  умолчанию — сначала просрочки, затем ближайшие дедлайны.
+- Карточка задачи — `ManagerTaskOut`: исполнитель (`assignee_name`), клиент
+  (`contact_name`/`contact_phone`), звонок‑источник (`call_id`) и тип
+  договорённости (`agreement_type`). Менеджер видит только метаданные, без
+  аудио и транскриптов.
+- `/manager/team/stats` — аналитика по команде и **по сотрудникам**: количество
+  созданных договорённостей (`agreements_total`), количество задач, выполнено
+  вовремя, просрочено, среднее время закрытия, доля задач из звонков и процент
+  выполнения в срок.
 
 ### WebSocket‑события
 

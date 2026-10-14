@@ -3,13 +3,14 @@
 from __future__ import annotations
 
 import uuid
-from collections.abc import Sequence
+from collections.abc import Collection, Sequence
+from datetime import date
 from typing import Any, cast
 
-from sqlalchemy import Select, select
+from sqlalchemy import Select, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.domain.enums import ConsentSubjectType, ConsentType
+from app.domain.enums import ConsentSubjectType, ConsentType, TaskPriority
 from app.infrastructure.db.models import (
     Agreement,
     AgreementEdit,
@@ -76,6 +77,16 @@ async def list_calls(session: AsyncSession, user_id: uuid.UUID, *, limit: int = 
     result = await session.execute(
         select(Call).where(Call.user_id == user_id).order_by(Call.created_at.desc()).limit(limit)
     )
+    return result.scalars().all()
+
+
+async def list_calls_by_ids(
+    session: AsyncSession, call_ids: Collection[uuid.UUID]
+) -> Sequence[Call]:
+    """Batch fetch for the manager board card (client / call-source metadata)."""
+    if not call_ids:
+        return []
+    result = await session.execute(select(Call).where(Call.id.in_(call_ids)))
     return result.scalars().all()
 
 
@@ -147,6 +158,30 @@ async def list_agreements_for_user(
     return result.scalars().all()
 
 
+async def list_agreements_by_ids(
+    session: AsyncSession, agreement_ids: Collection[uuid.UUID]
+) -> Sequence[Agreement]:
+    """Batch fetch for the manager board card (agreement type per task)."""
+    if not agreement_ids:
+        return []
+    result = await session.execute(select(Agreement).where(Agreement.id.in_(agreement_ids)))
+    return result.scalars().all()
+
+
+async def count_agreements_by_member(
+    session: AsyncSession, team_id: uuid.UUID
+) -> dict[uuid.UUID, int]:
+    """Agreements per team member: counts ``calls`` owned by each member (§15)."""
+    result = await session.execute(
+        select(Call.user_id, func.count(Agreement.id))
+        .join(Agreement, Agreement.call_id == Call.id)
+        .join(User, User.id == Call.user_id)
+        .where(User.team_id == team_id)
+        .group_by(Call.user_id)
+    )
+    return dict(result.all())
+
+
 async def record_agreement_edit(
     session: AsyncSession,
     *,
@@ -173,13 +208,23 @@ async def get_task_for_agreement(session: AsyncSession, agreement_id: uuid.UUID)
 
 
 async def list_tasks_for_user(
-    session: AsyncSession, user_id: uuid.UUID, *, limit: int = 500
+    session: AsyncSession,
+    user_id: uuid.UUID,
+    *,
+    priority: TaskPriority | None = None,
+    due_before: date | None = None,
+    due_after: date | None = None,
+    limit: int = 500,
 ) -> Sequence[Task]:
+    statement = select(Task).where(Task.assignee_user_id == user_id)
+    if priority is not None:
+        statement = statement.where(Task.priority == priority)
+    if due_before is not None:
+        statement = statement.where(Task.due_date <= due_before)
+    if due_after is not None:
+        statement = statement.where(Task.due_date >= due_after)
     result = await session.execute(
-        select(Task)
-        .where(Task.assignee_user_id == user_id)
-        .order_by(Task.due_date.asc().nulls_last(), Task.created_at.desc())
-        .limit(limit)
+        statement.order_by(Task.due_date.asc().nulls_last(), Task.created_at.desc()).limit(limit)
     )
     return result.scalars().all()
 
@@ -197,16 +242,31 @@ async def list_tasks_for_team(
     team_id: uuid.UUID,
     *,
     user_id: uuid.UUID | None = None,
-    status: str | None = None,
-    due_before: str | None = None,
+    priority: TaskPriority | None = None,
+    due_before: date | None = None,
+    due_after: date | None = None,
+    agreement_type: str | None = None,
 ) -> Sequence[Task]:
+    """Team tasks for the manager board.
+
+    Filters that map directly to columns are pushed to SQL; the derived
+    ``overdue`` status and the board ordering are resolved in the service
+    (overdue depends on "today"). A ``status`` filter is therefore *not*
+    applied here: stored and derived statuses are reconciled by the caller.
+    """
     statement = _task_team_statement(team_id)
     if user_id is not None:
         statement = statement.where(Task.assignee_user_id == user_id)
-    if status is not None:
-        statement = statement.where(Task.status == status)
+    if priority is not None:
+        statement = statement.where(Task.priority == priority)
     if due_before is not None:
         statement = statement.where(Task.due_date <= due_before)
+    if due_after is not None:
+        statement = statement.where(Task.due_date >= due_after)
+    if agreement_type is not None:
+        statement = statement.join(Agreement, Agreement.id == Task.agreement_id).where(
+            Agreement.type == agreement_type
+        )
     result = await session.execute(
         statement.order_by(Task.due_date.asc().nulls_last(), Task.created_at.desc())
     )

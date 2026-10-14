@@ -159,7 +159,7 @@ Tasks
 
 | method | path                    | notes                               |
 | ------ | ----------------------- | ----------------------------------- |
-| GET    | `/me/tasks`             | tasks created from confirmed agreements |
+| GET    | `/me/tasks`             | personal board (§14): `view=today\|overdue\|upcoming\|done\|all`, plus `status`/`priority`/`due_before`/`due_after` |
 | PATCH  | `/tasks/{id}`           | edit (status transitions validated) |
 | POST   | `/tasks/{id}/complete`  | mark done                           |
 | POST   | `/tasks/{id}/calendar`  | write the task into the calendar (explicit action) |
@@ -173,8 +173,8 @@ Manager board (role + team membership enforced server-side)
 
 | method | path                    | notes                               |
 | ------ | ----------------------- | ----------------------------------- |
-| GET    | `/manager/team/tasks`   | filters: `user_id`, `status`, `due_before` |
-| GET    | `/manager/team/stats`   | team metrics                        |
+| GET    | `/manager/team/tasks`   | filters: `user_id`, `status`, `priority`, `task_type`, `due_before`, `due_after`; `sort=overdue\|due_date\|priority\|created` (default overdue-first) |
+| GET    | `/manager/team/stats`   | team metrics + per-member breakdown (incl. `agreements_total`) |
 | GET    | `/manager/team/members` | team roster                         |
 
 Sync (deltas, idempotent push)
