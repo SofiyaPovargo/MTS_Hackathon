@@ -13,6 +13,8 @@ class HttpManagerApi implements ManagerApi {
   Future<List<TaskItem>> fetchTeamTasks({
     String? userId,
     String? status,
+    String? priority,
+    String? taskType,
     DateTime? dueBefore,
   }) async {
     final data = await _client.get(
@@ -20,6 +22,8 @@ class HttpManagerApi implements ManagerApi {
       query: <String, Object?>{
         'user_id': ?userId,
         'status': ?status,
+        'priority': ?priority,
+        'task_type': ?taskType,
         if (dueBefore != null) 'due_before': formatDateOnly(dueBefore),
       },
     );

@@ -32,8 +32,7 @@ void main() {
     expect(board.memberName('unknown'), '—');
   });
 
-  test('applyFilter queries the server with the employee/status/due and keeps priority client-side',
-      () async {
+  test('applyFilter sends the priority/type/due filters to the server', () async {
     final api = FakeManagerApi(members: <TeamMember>[testMember(id: 'u1')]);
     final scope = buildContainer(api);
     addTearDown(scope.dispose);
@@ -43,16 +42,34 @@ void main() {
           ManagerFilter(
             userId: 'u1',
             status: TaskStatus.overdue,
-            dueBefore: DateTime(2026, 10, 20),
             priority: TaskPriority.high,
+            taskType: 'payment',
+            dueBefore: DateTime(2026, 10, 20),
           ),
         );
 
     expect(api.lastUserId, 'u1');
     expect(api.lastStatus, 'overdue');
+    expect(api.lastPriority, 'high');
+    expect(api.lastTaskType, 'payment');
     expect(api.lastDueBefore, DateTime(2026, 10, 20));
     final board = scope.read(managerControllerProvider).value!;
     expect(board.filter.priority, TaskPriority.high);
+    expect(board.filter.taskType, 'payment');
+  });
+
+  test('clearing a task-type filter drops it from the request', () async {
+    final api = FakeManagerApi();
+    final scope = buildContainer(api);
+    addTearDown(scope.dispose);
+    await scope.read(managerControllerProvider.future);
+    final notifier = scope.read(managerControllerProvider.notifier);
+
+    await notifier.applyFilter(const ManagerFilter(taskType: 'payment'));
+    expect(api.lastTaskType, 'payment');
+
+    await notifier.applyFilter(const ManagerFilter().copyWith(clearTaskType: true));
+    expect(api.lastTaskType, isNull);
   });
 
   test('refresh re-fetches with the current filter', () async {

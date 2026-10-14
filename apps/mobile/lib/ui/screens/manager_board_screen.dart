@@ -162,6 +162,19 @@ class _FilterBar extends StatelessWidget {
             ),
           ),
           const SizedBox(width: 12),
+          DropdownButton<String?>(
+            value: filter.taskType,
+            hint: const Text('Тип'),
+            items: <DropdownMenuItem<String?>>[
+              const DropdownMenuItem<String?>(child: Text('Все типы')),
+              for (final type in _taskTypes(board.tasks))
+                DropdownMenuItem<String?>(value: type, child: Text(type)),
+            ],
+            onChanged: (value) => onChanged(
+              filter.copyWith(taskType: value, clearTaskType: value == null),
+            ),
+          ),
+          const SizedBox(width: 12),
           if (filter.dueBefore != null)
             InputChip(
               label: Text('До ${formatDueDate(filter.dueBefore)}'),
@@ -176,6 +189,17 @@ class _FilterBar extends StatelessWidget {
       ),
     );
   }
+
+  /// Distinct agreement types present on the board (the API has no type list).
+  static List<String> _taskTypes(List<TaskItem> tasks) {
+    final types = <String>{};
+    for (final task in tasks) {
+      final type = task.agreementType;
+      if (type != null && type.isNotEmpty) types.add(type);
+    }
+    final sorted = types.toList()..sort();
+    return sorted;
+  }
 }
 
 class _ManagerTaskTile extends StatelessWidget {
@@ -187,15 +211,19 @@ class _ManagerTaskTile extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final overdue = task.status == TaskStatus.overdue;
+    final name = task.assigneeName ?? assignee;
+    final client = task.contactName;
+    final subtitle = StringBuffer(name)
+      ..write(' · ${formatDueDate(task.dueDate)}')
+      ..write(' · ${taskPriorityLabel(task.priority)}');
+    if (client != null) subtitle.write(' · $client');
     return ListTile(
       leading: Icon(
         overdue ? Icons.warning_amber : Icons.task_alt,
         color: overdue ? Theme.of(context).colorScheme.error : null,
       ),
       title: Text(task.title),
-      subtitle: Text(
-        '$assignee · ${formatDueDate(task.dueDate)} · ${taskPriorityLabel(task.priority)}',
-      ),
+      subtitle: Text(subtitle.toString()),
       trailing: Chip(label: Text(taskStatusLabel(task.status))),
     );
   }
@@ -209,10 +237,12 @@ class _AnalyticsTab extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final closeHours = stats.avgCloseHours;
+    final theme = Theme.of(context);
     return ListView(
       padding: const EdgeInsets.all(16),
       children: <Widget>[
         _StatCard(title: 'Сотрудников', value: '${stats.membersCount}'),
+        _StatCard(title: 'Договорённостей', value: '${stats.agreementsTotal}'),
         _StatCard(title: 'Всего задач', value: '${stats.tasksTotal}'),
         _StatCard(title: 'Просрочено', value: '${stats.overdue}'),
         _StatCard(title: 'Выполнено вовремя', value: '${stats.doneOnTime}'),
@@ -231,13 +261,27 @@ class _AnalyticsTab extends StatelessWidget {
           value: '${stats.tasksFromCallsPercent.toStringAsFixed(1)}%',
         ),
         const SizedBox(height: 8),
-        Text('По статусам', style: Theme.of(context).textTheme.titleSmall),
+        Text('По статусам', style: theme.textTheme.titleSmall),
         for (final status in TaskStatus.values)
           ListTile(
             dense: true,
             title: Text(taskStatusLabel(status)),
             trailing: Text('${stats.statusCount(status)}'),
           ),
+        if (stats.memberStats.isNotEmpty) ...<Widget>[
+          const SizedBox(height: 8),
+          Text('По сотрудникам', style: theme.textTheme.titleSmall),
+          for (final member in stats.memberStats)
+            Card(
+              child: ListTile(
+                title: Text(member.fullName),
+                subtitle: Text(
+                  'Задач: ${member.tasksTotal} · просрочено: ${member.overdue} · '
+                  'в срок: ${member.doneOnTimePercent.toStringAsFixed(0)}%',
+                ),
+              ),
+            ),
+        ],
       ],
     );
   }

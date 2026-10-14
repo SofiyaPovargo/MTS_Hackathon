@@ -73,16 +73,23 @@ TeamMember testMember({
 
 TeamStats testStats({
   int membersCount = 2,
+  int agreementsTotal = 3,
   int tasksTotal = 5,
-  Map<String, int> tasksByStatus = const <String, int>{'new': 2, 'done': 2, 'overdue': 1},
+  Map<String, int> tasksByStatus = const <String, int>{
+    'new': 2,
+    'done': 2,
+    'overdue': 1,
+  },
   int overdue = 1,
   int doneOnTime = 2,
   double doneOnTimePercent = 100,
   double? avgCloseHours = 12.5,
   double tasksFromCallsPercent = 80,
+  List<MemberStats> memberStats = const <MemberStats>[],
 }) {
   return TeamStats(
     membersCount: membersCount,
+    agreementsTotal: agreementsTotal,
     tasksTotal: tasksTotal,
     tasksByStatus: tasksByStatus,
     overdue: overdue,
@@ -90,10 +97,14 @@ TeamStats testStats({
     doneOnTimePercent: doneOnTimePercent,
     avgCloseHours: avgCloseHours,
     tasksFromCallsPercent: tasksFromCallsPercent,
+    memberStats: memberStats,
   );
 }
 
-Agreement testAgreement({String id = '33333333-3333-3333-3333-333333333333', int version = 1}) {
+Agreement testAgreement({
+  String id = '33333333-3333-3333-3333-333333333333',
+  int version = 1,
+}) {
   return Agreement(
     id: id,
     callId: '44444444-4444-4444-4444-444444444444',
@@ -201,7 +212,10 @@ class FakeAuthApi implements AuthApi {
 }
 
 class FakeBoardApi implements BoardApi {
-  FakeBoardApi({this.tasks = const <TaskItem>[], this.agreements = const <Agreement>[]});
+  FakeBoardApi({
+    this.tasks = const <TaskItem>[],
+    this.agreements = const <Agreement>[],
+  });
 
   List<TaskItem> tasks;
   List<Agreement> agreements;
@@ -230,6 +244,8 @@ class FakeManagerApi implements ManagerApi {
 
   String? lastUserId;
   String? lastStatus;
+  String? lastPriority;
+  String? lastTaskType;
   DateTime? lastDueBefore;
   int taskCalls = 0;
   int statsCalls = 0;
@@ -239,11 +255,15 @@ class FakeManagerApi implements ManagerApi {
   Future<List<TaskItem>> fetchTeamTasks({
     String? userId,
     String? status,
+    String? priority,
+    String? taskType,
     DateTime? dueBefore,
   }) async {
     taskCalls++;
     lastUserId = userId;
     lastStatus = status;
+    lastPriority = priority;
+    lastTaskType = taskType;
     lastDueBefore = dueBefore;
     final failure = error;
     if (failure != null) throw failure;
@@ -369,20 +389,25 @@ class InMemorySyncStateStore implements SyncStateStore {
   Future<String?> readSyncToken() async => token;
 
   @override
-  Future<void> writeSyncToken(String value) async => token = value.isEmpty ? null : value;
+  Future<void> writeSyncToken(String value) async =>
+      token = value.isEmpty ? null : value;
 
   @override
   Future<int> readRecordVersion(String entityType, String id) async =>
       versions['$entityType:$id'] ?? 0;
 
   @override
-  Future<void> writeRecordVersion(String entityType, String id, int version) async =>
-      versions['$entityType:$id'] = version;
+  Future<void> writeRecordVersion(
+    String entityType,
+    String id,
+    int version,
+  ) async => versions['$entityType:$id'] = version;
 }
 
 /// Controllable [VoiceCallProvider]: records control calls and lets tests emit
 /// provider signals explicitly (no timers, no platform channels).
-class FakeVoiceCallProvider implements VoiceCallProvider, IncomingCallSimulator {
+class FakeVoiceCallProvider
+    implements VoiceCallProvider, IncomingCallSimulator {
   FakeVoiceCallProvider({this.microphoneGranted = true});
 
   bool microphoneGranted;
@@ -426,16 +451,19 @@ class FakeVoiceCallProvider implements VoiceCallProvider, IncomingCallSimulator 
   }
 
   @override
-  Future<void> setMuted(String externalId, bool value) async => muted.add(value);
+  Future<void> setMuted(String externalId, bool value) async =>
+      muted.add(value);
 
   @override
   void simulateIncoming({required String phone, String? name}) {
-    emit(CallSignal(
-      kind: CallSignalKind.incoming,
-      externalId: 'fake-${++_sequence}',
-      phone: phone,
-      name: name,
-    ));
+    emit(
+      CallSignal(
+        kind: CallSignalKind.incoming,
+        externalId: 'fake-${++_sequence}',
+        phone: phone,
+        name: name,
+      ),
+    );
   }
 
   void emit(CallSignal signal) {

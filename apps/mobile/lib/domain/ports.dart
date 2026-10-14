@@ -49,6 +49,8 @@ abstract class ManagerApi {
   Future<List<TaskItem>> fetchTeamTasks({
     String? userId,
     String? status,
+    String? priority,
+    String? taskType,
     DateTime? dueBefore,
   });
 
@@ -185,7 +187,10 @@ abstract class AgreementApi {
   Future<List<Agreement>> listForCall(String callId);
 
   /// Manual entry / no-consent path (`POST /calls/{id}/agreements`).
-  Future<Agreement> create({required String callId, required AgreementPatch patch});
+  Future<Agreement> create({
+    required String callId,
+    required AgreementPatch patch,
+  });
 
   /// User edits (`PATCH /agreements/{id}`).
   Future<Agreement> patch(String agreementId, AgreementPatch changes);

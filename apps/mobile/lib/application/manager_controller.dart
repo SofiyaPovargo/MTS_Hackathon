@@ -5,39 +5,49 @@ import '../domain/models.dart';
 import '../domain/ports.dart';
 import 'providers.dart';
 
-/// Manager board filter (plan.md §15). Employee/status/due are applied by the
-/// server; priority is applied client-side (the backend has no priority filter).
+/// Manager board filter (plan.md §15). Employee/status/priority/type/due are
+/// applied by the server; priority is also narrowed client-side so the board
+/// still filters against a backend that predates the server-side filter.
 class ManagerFilter {
   const ManagerFilter({
     this.userId,
     this.status,
-    this.dueBefore,
     this.priority,
+    this.taskType,
+    this.dueBefore,
   });
 
   final String? userId;
   final TaskStatus? status;
-  final DateTime? dueBefore;
   final TaskPriority? priority;
+  final String? taskType;
+  final DateTime? dueBefore;
 
   bool get isEmpty =>
-      userId == null && status == null && dueBefore == null && priority == null;
+      userId == null &&
+      status == null &&
+      priority == null &&
+      taskType == null &&
+      dueBefore == null;
 
   ManagerFilter copyWith({
     String? userId,
     TaskStatus? status,
-    DateTime? dueBefore,
     TaskPriority? priority,
+    String? taskType,
+    DateTime? dueBefore,
     bool clearUserId = false,
     bool clearStatus = false,
-    bool clearDueBefore = false,
     bool clearPriority = false,
+    bool clearTaskType = false,
+    bool clearDueBefore = false,
   }) {
     return ManagerFilter(
       userId: clearUserId ? null : (userId ?? this.userId),
       status: clearStatus ? null : (status ?? this.status),
-      dueBefore: clearDueBefore ? null : (dueBefore ?? this.dueBefore),
       priority: clearPriority ? null : (priority ?? this.priority),
+      taskType: clearTaskType ? null : (taskType ?? this.taskType),
+      dueBefore: clearDueBefore ? null : (dueBefore ?? this.dueBefore),
     );
   }
 }
@@ -88,6 +98,8 @@ class ManagerController extends AsyncNotifier<ManagerBoard> {
     final tasks = await _api.fetchTeamTasks(
       userId: filter.userId,
       status: filter.status?.wire,
+      priority: filter.priority?.wire,
+      taskType: filter.taskType,
       dueBefore: filter.dueBefore,
     );
     return ManagerBoard(
@@ -98,8 +110,8 @@ class ManagerController extends AsyncNotifier<ManagerBoard> {
     );
   }
 
-  /// Applies a filter. Employee/status/due re-query the server; priority is a
-  /// client-side narrowing. Errors propagate so the UI can surface them.
+  /// Applies a filter: employee/status/priority/type/due re-query the server.
+  /// Errors propagate so the UI can surface them.
   Future<void> applyFilter(ManagerFilter filter) async {
     final current = state.valueOrNull;
     if (current == null) {
@@ -109,6 +121,8 @@ class ManagerController extends AsyncNotifier<ManagerBoard> {
     final tasks = await _api.fetchTeamTasks(
       userId: filter.userId,
       status: filter.status?.wire,
+      priority: filter.priority?.wire,
+      taskType: filter.taskType,
       dueBefore: filter.dueBefore,
     );
     state = AsyncValue<ManagerBoard>.data(
