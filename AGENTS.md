@@ -177,8 +177,12 @@ ask; do not guess.
 - The local SQLite database stores only the user's own data: profile and role,
   their tasks and agreements, recent calls, offline drafts, outbox, `sync_token`,
   and record versions.
-- Do not store: other employees' tasks, team data, unnecessary audio, or data
-  the user has no access to.
+- It may also cache the user's own recordings of recent calls: a bounded local
+  cache (last N calls and/or a retention window) in the app's private storage,
+  encrypted when a key is available. This is a cache, not the system of record:
+  the server is authoritative and the local copy can be dropped and refetched.
+- Do not store: other employees' tasks, team data, recordings beyond the local
+  cache limit, or data the user has no access to.
 - Flow: UI → Repository → Local DB → Outbox → Sync Engine → Server.
 - Cycle: pull (`GET /sync?since=`) → apply to the local DB → push outbox → ack and
   delete successful operations → update `sync_token`.
