@@ -30,6 +30,7 @@ from app.infrastructure.db import repositories
 from app.infrastructure.db.session import create_engine_and_factory
 from app.infrastructure.storage import MinioStorage
 from app.integrations.exolve import exolve_recording_client
+from app.integrations.notifications import push_factory
 from app.ml.asr.ports import StreamingASRPort
 from app.ml.diarization.ports import DiarizationPort
 from app.ml.extraction.ports import ExtractionPort
@@ -39,6 +40,7 @@ from app.ml.summary.ports import SummaryPort
 from app.ml.vad.ports import VadPort
 from app.services.data_deletion import delete_user_data, purge_expired_audio
 from app.services.events import EventHub
+from app.services.notifications import ReminderDeliveryService
 from app.services.provider_recording import ProviderRecordingService
 
 logger = logging.getLogger(__name__)
@@ -326,8 +328,27 @@ async def _stream_extract(call_id: str) -> int:
 
 @celery_app.task(queue="notifications", name="send_reminder")
 def send_reminder(reminder_id: str) -> dict[str, object]:
-    """Stage 7/9: send a reminder through the RemindersPort (never skipped)."""
-    return {"reminder_id": reminder_id, "job": "notifications", "implemented": False}
+    """worker-notifications: deliver a due reminder through the push port.
+
+    Idempotent by reminder status: a reminder that is no longer ``scheduled`` is
+    left untouched, so a redelivered job cannot notify the user twice.
+    """
+    status = asyncio.run(_send_reminder(reminder_id))
+    return {"reminder_id": reminder_id, "job": "notifications", "status": status}
+
+
+async def _send_reminder(reminder_id: str) -> str:
+    settings = get_settings()
+    engine, factory = create_engine_and_factory(settings.database_url)
+    try:
+        push = push_factory(settings.push_provider)
+        async with factory() as session:
+            service = ReminderDeliveryService(session, push=push)
+            reminder = await service.deliver(uuid.UUID(reminder_id))
+            await session.commit()
+            return reminder.status.value
+    finally:
+        await engine.dispose()
 
 
 @celery_app.task(queue="notifications", name="request_data_deletion")

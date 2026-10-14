@@ -264,6 +264,9 @@ class Task(UUIDPrimaryKeyMixin, CreatedAtMixin, UpdatedAtMixin, VersionMixin, Ba
         index=True,
     )
     completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    # Id of the event created in the user's calendar (``CalendarPort``). Stored so
+    # it can be updated/deleted later; ``None`` until the user schedules the task.
+    calendar_event_id: Mapped[str | None] = mapped_column(String(255), nullable=True)
 
 
 class Reminder(UUIDPrimaryKeyMixin, CreatedAtMixin, Base):

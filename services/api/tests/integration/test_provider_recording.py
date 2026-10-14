@@ -59,6 +59,9 @@ class RecordingQueue:
     def enqueue_data_deletion(self, user_id: str) -> None:
         return None
 
+    def enqueue_reminder(self, reminder_id: str, *, eta: datetime) -> None:
+        return None
+
 
 async def _make_call(
     session: AsyncSession,

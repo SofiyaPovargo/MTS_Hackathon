@@ -19,6 +19,14 @@ pytest 135 passed. **Трек C (Mav) закрыт**: приём и докачк
 (backend/интеграции) — см. «Перераспределение» ниже. Локальная БД поднимается
 скриптом `./scripts/local-db.sh`.
 
+**Обновление 2026-10-14:** трек B (ML) **закрыт**. Актуальные статусы — в
+`PROGRESS.md` (сводка) и `REMAINING.md` (список по людям). Новый инкремент трека C
+(ветка `feat/calendar-delete-reminders`): удаление календарного события, `call_id`
+в `TaskOut`/sync, доставка напоминаний (`send_reminder`). Вне треков остались
+реальные адаптеры OAuth/FCM/APNs, LLM-распознавание отмены/переноса и подъём на
+VPS (нужны внешние ключи/стенд). Backend-гейты: ruff ✓, mypy ✓, pytest **265
+passed**.
+
 Главный принцип (AGENTS.md, «Working order»): этапы идут по порядку, но это
 касается **зависимостей**, а не людских ресурсов. Ниже — три независимых трека,
 каждый со своей последовательностью задач, которые можно делать сейчас.
@@ -53,11 +61,11 @@ pytest 135 passed. **Трек C (Mav) закрыт**: приём и докачк
 - [x] **Exolve webhooks** (call-control + statistics `b/o/s/h/e/crr`) end-to-end: `POST /api/voice/exolve/control` (маршрут по `EXOLVE_SIP_ROUTES`, `Call`, `file_to_A`, `event_URL`) + `POST /api/voice/exolve/events` (`b/o/s/e` → `CallSessionService`; `crr` → скачивание записи)
 - [x] **Consent-уведомление** в бою (`file_to_A`, режим `notice`) + запись в `consents`: notice в ответе call-control, ветка согласия — по событию `s`
 - [x] **Правка подтверждённых договорённостей** (`plan.md` §12–14): `PATCH /agreements/{id}` работает в любом статусе (в т.ч. `confirmed`) и переносится на связанную задачу (название, срок, ответственный) + сдвиг напоминаний; `POST /reject` подтверждённой отменяет задачу; каждое изменение → `version` + `audit_log`; повторное извлечение не создаёт дублей
-- [ ] **Удаление календарных договорённостей** (`plan.md` §12–14): календарные договорённости (события из `confirmed`) можно **удалять** — `CalendarPort.delete_event()` + `DELETE /tasks/{id}/calendar`, хранить `event_id` (сейчас он только в `audit_log`), писать `audit_log`; распознавание **отмены/переноса** в разговоре (LLM + сопоставление с существующей договорённостью) → предложение удалить/перенести (удаление во внешней системе — **только после подтверждения пользователя**)
+- [x] **Удаление календарных договорённостей** (`plan.md` §12–14): `CalendarPort.delete_event()` + `DELETE /tasks/{id}/calendar` (204, 404 если события нет); `event_id` хранится в `tasks.calendar_event_id` (миграция `c4d7e18f5a62`), удаление пишется в `audit_log`; `call_id`/`calendar_event_id` в `TaskOut` и sync; тесты `test_calendar_delete`. *(осталось, ML)* распознавание **отмены/переноса** в разговоре (LLM + сопоставление с существующей договорённостью) → предложение удалить/перенести (эндпоинт и порт уже готовы)
 - [x] **Приватность**: шифрование полей `transcripts`/`agreement_extractions` (Fernet, `DATA_ENCRYPTION_KEY`; аудио — SSE-AES256), redaction логов LLM (`redact`/`redact_preview`); retention/удаление — `services/data_deletion.py` (`beat`, чистит и незавершённые чанки докачки)
 - [x] **Этап 8 (backend, доски)**: личная доска `GET /me/tasks` со срезами `view=today|overdue|upcoming|done` и фильтрами (статус/приоритет/срок); доска менеджера `GET /manager/team/tasks` — фильтры сотрудник/статус/приоритет/тип (`task_type`)/срок и сортировка (просрочки → ближайшие дедлайны); карточка `ManagerTaskOut` (исполнитель, клиент, звонок‑источник, тип); `GET /manager/team/stats` — аналитика по команде **и по сотрудникам** (`agreements_total`, вовремя/просрочено, среднее время закрытия, доля из звонков); типизированные схемы вместо `dict`; роль+team проверяются на сервере; тесты `test_boards`
 - [x] **Этап 9 (backend, итог)**: `services/summary.py` — детерминированное резюме разговора из извлечённых договорённостей (без LLM, без выдуманных фактов), кэш в `calls.summary` (виден в `GET /calls/{id}`, sync, `call_ended`), эндпоинт `GET /calls/{id}/summary` (владелец); обновляется в пайплайне после извлечения и пересобирается на чтение; `schedule.py` — календарь/`.ics`/напоминания/черновик клиенту (только confirmed); тесты `test_summary`, `test_call_summary`
-- [ ] (опц.) **Этап 9 (остаток)**: UI итога/календаря/напоминаний/`.ics`/истории звонков — **сделано** (трек A, 167 тестов); реальные адаптеры календаря/напоминаний (OAuth/FCM) — сейчас `Null*` + `.ics`; deliveries `send_reminder` (FCM/APNs) не поставлены в очередь; (опц.) резюме через LLM вместо детерминированного; (опц.) подъём на VPS — подготовка готова (`docker-compose.prod.yml`, `docs/deploy.md`)
+- [x] (опц.) **Этап 9 (остаток)**: UI итога/календаря/напоминаний/`.ics`/истории звонков — **сделано** (трек A, 167 тестов); **доставка напоминаний** — `POST /tasks/{id}/reminders` для `push`-канала ставит `send_reminder` в `worker-notifications` (ETA=`remind_at`), воркер доставляет через `PushPort` и переводит в `sent`/`failed` (идемпотентно; `PUSH_PROVIDER`, default `null`), тесты `test_reminder_delivery`. *(осталось, внешние ключи)* реальные адаптеры `CalendarPort`/`RemindersPort` (OAuth Google/Microsoft) и `PUSH_PROVIDER=fcm|apns` — skeleton за портами; (опц.) резюме через LLM вместо детерминированного; (опц.) подъём на VPS — подготовка готова (`docker-compose.prod.yml`, `docs/deploy.md`)
 
 ### Sofia — трек B (ML, делает сама) — ✅ закрыт
 - [x] Решение по LLM (самохостинг: Ollama `qwen2.5:7b`) и включение извлечения в prod (`LLM_BASE_URL`/`LLM_MODEL`)
@@ -233,12 +241,16 @@ wav (research уже умеет их синтезировать) — мобил�
 4. **Календарь/напоминания** (Этап 9, backend): `CalendarPort.create_event()` +
    `.ics` (dependency `icalendar` уже есть), `RemindersPort.create_reminder()`,
    только после подтверждения пользователя (правило продукта!)
-   - [x] `services/schedule.py`: календарь (`POST /tasks/{id}/calendar`),
-     `.ics` (`GET /tasks/{id}/calendar.ics`), напоминания
+   - [x] `services/schedule.py`: календарь (`POST /tasks/{id}/calendar`), удаление
+     (`DELETE /tasks/{id}/calendar`, `CalendarPort.delete_event()`, `event_id` в
+     `tasks.calendar_event_id`), `.ics` (`GET /tasks/{id}/calendar.ics`), напоминания
      (`POST/GET /tasks/{id}/reminders`, `POST /reminders/{id}/cancel`),
      черновик сообщения (`POST /tasks/{id}/message-draft`, `sent: false`)
    - [x] Только для задач из `confirmed`-договорённости; `remind_at` — в будущем
-   - [ ] Реальные адаптеры календаря/напоминаний (за теми же портами)
+   - [x] Доставка напоминаний: `send_reminder` в `worker-notifications` (очередь с
+     ETA, `PushPort`, идемпотентность, `sent`/`failed`)
+   - [ ] Реальные адаптеры календаря/напоминаний (OAuth Google/Microsoft) и
+     `PUSH_PROVIDER=fcm|apns` (за теми же портами)
 5. **Деплой** (не блокирует демо): VPS + тот же compose + Let's Encrypt;
    секреты из `.env`, не из коммитов.
    - [x] Подготовка: `docker-compose.prod.yml` (реальные сертификаты, restart,

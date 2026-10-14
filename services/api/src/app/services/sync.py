@@ -79,8 +79,12 @@ class SyncService:
             changes.append(_call_item(call))
         for agreement in await repositories.list_agreements_for_user(self._session, user.id, limit=limit):
             changes.append(_agreement_item(agreement))
-        for task in await repositories.list_tasks_for_user(self._session, user.id, limit=limit):
-            changes.append(_task_item(task))
+        tasks = list(
+            await repositories.list_tasks_for_user(self._session, user.id, limit=limit)
+        )
+        call_ids = await self._tasks.call_ids_for(tasks)
+        for task in tasks:
+            changes.append(_task_item(task, call_id=call_ids.get(task.id)))
 
         if since is not None:
             changes = [change for change in changes if change.updated_at > since]
@@ -297,7 +301,7 @@ def _agreement_item(agreement: Agreement) -> SyncItem:
     )
 
 
-def _task_item(task: Task) -> SyncItem:
+def _task_item(task: Task, *, call_id: uuid.UUID | None = None) -> SyncItem:
     return SyncItem(
         entity_type="task",
         id=str(task.id),
@@ -306,6 +310,7 @@ def _task_item(task: Task) -> SyncItem:
         data={
             "id": str(task.id),
             "agreement_id": str(task.agreement_id) if task.agreement_id else None,
+            "call_id": str(call_id) if call_id else None,
             "assignee_user_id": str(task.assignee_user_id),
             "title": task.title,
             "description": task.description,

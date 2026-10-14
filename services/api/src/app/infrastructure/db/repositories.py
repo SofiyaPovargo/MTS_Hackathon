@@ -168,6 +168,18 @@ async def list_agreements_by_ids(
     return result.scalars().all()
 
 
+async def agreement_call_ids(
+    session: AsyncSession, agreement_ids: Collection[uuid.UUID]
+) -> dict[uuid.UUID, uuid.UUID]:
+    """Map agreement id -> source call id (batch link for personal-board tasks)."""
+    if not agreement_ids:
+        return {}
+    result = await session.execute(
+        select(Agreement.id, Agreement.call_id).where(Agreement.id.in_(agreement_ids))
+    )
+    return {row.id: row.call_id for row in result.all()}
+
+
 async def count_agreements_by_member(
     session: AsyncSession, team_id: uuid.UUID
 ) -> dict[uuid.UUID, int]:

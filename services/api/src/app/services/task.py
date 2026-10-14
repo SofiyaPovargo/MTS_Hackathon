@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import uuid
+from collections.abc import Sequence
 from datetime import UTC, date, datetime, time, timedelta
 from typing import Any
 
@@ -120,6 +121,20 @@ class TaskService:
         if task is None or task.assignee_user_id != user.id:
             raise NotFound("task not found")
         return task
+
+    async def call_ids_for(self, tasks: Sequence[Task]) -> dict[uuid.UUID, uuid.UUID | None]:
+        """Resolve each task's source call (via its agreement), one query.
+
+        Exposed so the personal board and sync can link a task back to the call
+        it came from ("К звонку-источнику").
+        """
+        agreement_ids = {task.agreement_id for task in tasks if task.agreement_id is not None}
+        by_agreement = await repositories.agreement_call_ids(self._session, agreement_ids)
+        result: dict[uuid.UUID, uuid.UUID | None] = {}
+        for task in tasks:
+            agreement_id = task.agreement_id
+            result[task.id] = by_agreement.get(agreement_id) if agreement_id is not None else None
+        return result
 
     # -- agreement -> task propagation ----------------------------------------
 
