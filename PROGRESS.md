@@ -4,6 +4,7 @@
 (есть backend/исследование, ждёт интеграции) · ⬜ не начато.
 
 Сводка на 2026-10-14: **Этапы 1–3 закрыты, Этапы 4–5 (mobile, Dart) закрыты**,
+**Этап 7 (mobile, Dart) — live-карточка по WS** реализована,
 ML-исследование слито. **ML-пайплайн
 переведён в прод** (PR #5): запись → роли из каналов VoIP → сегментированный
 транскрипт → LLM-извлечение → валидация → `agreement_detected`; реальные воркеры
@@ -33,7 +34,7 @@ VAD (Silero), LLM self-host (Ollama `qwen2.5:7b`), детерминирован�
 | 4. Звонки | 🔶 | backend: `VoiceProviderPort` (mock) + webhook-маршруты + state machine; **mobile (Dart)**: `VoiceCallProvider` за DI + `CallApi`, `CallController` (набор/ответ/отбой/mute), экран звонка (оверлей: таймер, mute, входящий), дозвон из контактов/доски, `MockVoiceCallProvider`, зеркало стейт-машины; analyze ✓, **53 теста** | нативный адаптер (CallKit/Telecom/Exolve SDK) и реальные входящие VoIP — нужна машина с Android SDK/Xcode; реальный провайдер (блокер) |
 | 5. Consent flow | ✅ | backend-логика целиком: `consent.py`, `call_session.py`, state machine, тесты notice/DTMF/refusal/withdraw; **mobile (Dart)**: гейт согласия на первом входе, настройки записи/ИИ (toggle, отзыв, удаление данных, политика), локальный кэш решения (`app_settings`, схема v2) + write-through `PUT /me/consent`/`withdraw`/`/me/data/delete`, блокировка записи без согласия в `CallController` (нет согласия → обычный звонок), отказ собеседника → звонок без записи, `consent_notice/consent_result` в зеркале стейт-машины; analyze ✓, тесты | аудио-уведомление собеседнику (play_notice) проигрывает провайдер (бэкенд, Exolve `file_to_A`); UI-статусы согласия в звонке получат данные от WS (Этап 7) |
 | 6. Запись и анализ | ✅ | **прод-пайплайн** (`ml/pipeline.py`): декодер + роли из каналов VoIP / диаризация для mono-PSTN (`ml/stt`), транскрипт в `transcripts` (JSONB-сегменты, `role_source`), LLM+Instructor + валидация (`ml/extraction`, детерминированные даты), реальные воркеры `process_asr`/`run_llm_extraction`, эмиссия `partial_transcript`/`agreement_detected`, **приём аудио от клиента** `POST /calls/{id}/audio` (raw `audio/*`, mixed или `?leg=`, MinIO + `call_audio`, авто-постановка ASR, только после записи/согласия, **докачиваемая загрузка** `Content-Range` + `offset` — обрыв сети не теряет записанное), триггер `POST /calls/{id}/analyze`, идемпотентность по `call_id`; **live-стриминг**: WS `/ws/calls/{id}/audio?leg=` → Redis → `worker-asr-live` (T-one стримингом, `partial_transcript` сразу) → `worker-ai-live` (инкрементальный extraction, upsert по fingerprint); **VAD** (Silero) в `ml/vad`; **LLM self-host** (Ollama `qwen2.5:7b` в compose), **авто-скачивание записи Exolve `crr`** (`download_recording` → MinIO → ASR; гейт согласия), **шифрование** `transcripts`/`agreement_extractions` (Fernet, `DATA_ENCRYPTION_KEY`) + redaction логов LLM, retention/удаление данных (`services/data_deletion.py`, Celery-beat) | — |
-| 7. Договорённости и задачи | 🔶 | backend: agreement-статусы, confirm→task, PATCH-guards, audit; тесты | live-карточка (UI), напоминания, привязка к звонку в UI |
+| 7. Договорённости и задачи | 🔶 | backend: agreement-статусы, confirm→task, PATCH-guards, audit; тесты; **mobile (Dart)**: live-карточка по WS (`/api/ws/calls/{id}`, события v1) — транскрипт, карточки договорённостей, confirm/reject/edit, ручной ввод без согласия, задача из `confirmed`; `AgreementApi`/`CallEventsPort` за DI, `WebSocketCallEvents`; analyze ✓, 106 тестов | напоминания, привязка к звонку в UI |
 | 8. Доски | 🔶 | backend: `/me/tasks`, `/manager/team/tasks|stats|members`, роли+team, тесты доступа | мобильные доски (личная и менеджерская), фильтры/сортировка, аналитика UI |
 | 9. Итог и календарь | 🔶 | backend: `schedule.py` — календарное событие/`.ics`/напоминания/черновик клиенту, только для confirmed-задач, тесты | резюме разговора, UI календаря/напоминаний, реальные адаптеры |
 | 10. Тестирование и демо | 🔶 | сквозное демо проверено: OTP → входящий → consent → задача → доска менеджера | тесты реальных звонков, 4G/обрыв WS, офлайн-синк, презентация |
@@ -218,13 +219,13 @@ models, sync_models, ports), `application/` (Riverpod-контроллеры + p
 | unit (7) | test_dates, test_rules, test_state_machine, test_exolve, test_audio_ingest, test_crypto, test_redaction | относительные даты, пороги, переходы звонка, Exolve (события, тело маршрута, Call Record API, порт, разбор `EXOLVE_SIP_ROUTES`), `Content-Range`-парсер, шифрование полей, redaction PII |
 | ml (6) | test_tone_client, test_pipeline, test_channels, test_extraction, test_trim, test_live | протокол T-one (`transcribe`+`stream`), слияние ролей/ресамплинг, роли из каналов VoIP, извлечение+валидация (детерминированные даты), VAD-обрезка, чтение Redis-стримов |
 | integration (16) | test_auth, test_access, test_call_consent, test_agreements_tasks, test_agreement_edits, test_audio_ingest, test_audio_resume, test_schedule, test_sync, test_manager, test_ws_events, test_ml_pipeline, test_exolve_webhooks, test_provider_recording, test_transcript_encryption, test_privacy | OTP/refresh, права ролей+команды, запись без consent, confirm→task, правка/отклонение **подтверждённой** договорённости → задача/напоминания (`version`+`audit`), приём аудио (mixed/`?leg=`/докачка `Content-Range`, 409), календарь/напоминания/черновик (только confirmed), sync-идемпотентность, WS auth/ownership/replay/live, сквозной ML-пайплайн (batch + live) + `POST /calls/{id}/analyze`, вебхуки Exolve (control/events), авто-скачивание записи (`crr` → MinIO, гейт согласия, идемпотентность), шифрование транскрипта/LLM-вывода в БД, retention/удаление данных |
-| mobile (13) | domain/models, domain/call, domain/consent, infrastructure/local_stores, infrastructure/sync_engine, application/auth_controller, application/board_controller, application/contacts_controller, application/call_controller, application/consent_controller, widget/app, widget/call_screen, widget/consent_screen, widget/settings_screen | парсинг моделей, стейт-машина звонка, согласие (AppConsent/статусы, кэш + write-through + retry), SQLite-хранилища (включая миграцию v1→v2), цикл sync + идемпотентность/конфликт/ретраи, контроллеры, экраны (доска, контакты, звонок, согласие, настройки) |
+| mobile (16) | domain/models, domain/call, domain/consent, domain/ws_event, infrastructure/local_stores, infrastructure/sync_engine, infrastructure/ws_call_events, application/auth_controller, application/board_controller, application/contacts_controller, application/call_controller, application/consent_controller, widget/app, widget/call_screen, widget/live_card, widget/consent_screen, widget/settings_screen | парсинг моделей, стейт-машина звонка, согласие (AppConsent/статусы, кэш + write-through + retry), WS-контракт v1 (конверт/сегменты/событие), SQLite-хранилища (включая миграцию v1→v2), цикл sync + идемпотентность/конфликт/ретраи, контроллеры (live-события, правка/подтверждение договорённостей, реконнект-fallback), экраны (доска, контакты, звонок + live-карточка, согласие, настройки) |
 
 Backend: **233 passed** (unit+ml+domain 129, integration 104); интеграционные требуют
 `docker compose up -d postgres redis` (отдельная БД `agreements_test`; креды берутся
 из `DATABASE_URL`). ML проверен end-to-end на реальных моделях (T-one, Ollama
 `qwen2.5:7b`, Silero VAD, pyannote).
-Mobile: **82 passed** (`flutter test`, без Docker); локальные хранилища тестируются
+Mobile: **106 passed** (`flutter test`, без Docker); локальные хранилища тестируются
 через `sqflite_common_ffi`.
 
 ---
@@ -243,7 +244,7 @@ curl -k https://localhost/api/healthz   # живо (nginx TLS)
 
 cd apps/mobile
 flutter analyze            # lint мобильного (чисто)
-flutter test               # 82 теста (Dart-уровень, без Docker)
+flutter test               # 106 тестов (Dart-уровень, без Docker)
 ```
 
 Демо-флоу (проверен): OTP-логин (dev OTP 1234) → `/calls` POST + вебхук
@@ -288,3 +289,4 @@ flutter test               # 82 теста (Dart-уровень, без Docker)
 - `#10` — **Трек C (Mav)**: вебхуки Exolve call-control + прогресс-события end-to-end (маршрут по `EXOLVE_SIP_ROUTES`, `file_to_A`, `client_id`; `b/o/s/e` → общий `CallSessionService`)
 - **Трек C (Mav)**: докачиваемая загрузка аудио (`Content-Range`/`offset`, идемпотентный повтор, 409 при рассинхроне, миграция `call_audio.pending_uploads`); правка/отклонение **подтверждённой** договорённости → задача + сдвиг напоминаний (`version`+`audit`)
 - **Трек C (Mav)**: авто-скачивание записи Exolve `crr` (`download_recording` → MinIO → ASR); шифрование `transcripts`/`agreement_extractions` (Fernet, миграция `a1c9f4e27b30`) + redaction логов LLM; retention-пурж чистит и незавершённые чанки; деплой-оверлей `docker-compose.prod.yml` + `docs/deploy.md`
+- `#11` — **Этап 7 (mobile, Dart)**: live-карточка по WS (`WebSocketCallEvents`, `AgreementApi`, контракт v1), транскрипт + карточки договорённостей, confirm/reject/edit, ручной ввод без согласия, задача из `confirmed`; analyze ✓, 106 тестов

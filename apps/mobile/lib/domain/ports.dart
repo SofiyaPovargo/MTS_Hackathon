@@ -8,6 +8,7 @@ import 'consent.dart';
 import 'enums.dart';
 import 'models.dart';
 import 'sync_models.dart';
+import 'ws_event.dart';
 
 class AuthResult {
   const AuthResult({required this.session});
@@ -151,4 +152,30 @@ abstract class ConsentStore {
   Future<AppConsent> read();
 
   Future<void> save(AppConsent consent);
+}
+
+/// Live per-call events over WebSocket (`/api/ws/calls/{call_id}`, schema v1).
+/// Connecting replays what was missed; the stream then delivers live frames.
+abstract class CallEventsPort {
+  Future<void> connect(String callId);
+
+  Stream<CallEvent> get events;
+
+  Future<void> disconnect();
+}
+
+/// Agreement actions over REST (`/calls/{id}/agreements*`, `/agreements/{id}*`).
+abstract class AgreementApi {
+  Future<List<Agreement>> listForCall(String callId);
+
+  /// Manual entry / no-consent path (`POST /calls/{id}/agreements`).
+  Future<Agreement> create({required String callId, required AgreementPatch patch});
+
+  /// User edits (`PATCH /agreements/{id}`).
+  Future<Agreement> patch(String agreementId, AgreementPatch changes);
+
+  /// Confirm → the server creates the task (`POST /agreements/{id}/confirm`).
+  Future<Agreement> confirm(String agreementId);
+
+  Future<Agreement> reject(String agreementId);
 }

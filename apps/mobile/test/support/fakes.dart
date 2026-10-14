@@ -6,6 +6,7 @@ import 'package:agreement_capture/domain/enums.dart';
 import 'package:agreement_capture/domain/models.dart';
 import 'package:agreement_capture/domain/ports.dart';
 import 'package:agreement_capture/domain/sync_models.dart';
+import 'package:agreement_capture/domain/ws_event.dart';
 import 'package:agreement_capture/infrastructure/api/api_exception.dart';
 
 UserProfile testUser({
@@ -425,5 +426,123 @@ class FakeConsentApi implements ConsentApi {
     final failure = error;
     if (failure != null) throw failure;
     deletions++;
+  }
+}
+
+/// Controllable [CallEventsPort]: tests connect explicitly and push live events
+/// instead of a WebSocket (the real client is `WebSocketCallEvents`).
+class FakeCallEventsPort implements CallEventsPort {
+  FakeCallEventsPort({this.error});
+
+  ApiException? error;
+  final StreamController<CallEvent> _controller =
+      StreamController<CallEvent>.broadcast();
+  final List<String> connected = <String>[];
+  int disconnectCalls = 0;
+
+  @override
+  Future<void> connect(String callId) async {
+    final failure = error;
+    if (failure != null) throw failure;
+    connected.add(callId);
+  }
+
+  @override
+  Stream<CallEvent> get events => _controller.stream;
+
+  @override
+  Future<void> disconnect() async {
+    disconnectCalls++;
+    if (!_controller.isClosed) await _controller.close();
+  }
+
+  void emit(CallEvent event) => _controller.add(event);
+}
+
+/// In-memory [AgreementApi] with server-like semantics: confirm/reject flip the
+/// status (final), patch applies the provided fields and bumps the version.
+class FakeAgreementApi implements AgreementApi {
+  FakeAgreementApi({this.error});
+
+  ApiException? error;
+  final Map<String, Agreement> stored = <String, Agreement>{};
+  final List<AgreementPatch> created = <AgreementPatch>[];
+  int listCalls = 0;
+
+  @override
+  Future<List<Agreement>> listForCall(String callId) async {
+    listCalls++;
+    return stored.values.where((a) => a.callId == callId).toList();
+  }
+
+  @override
+  Future<Agreement> create({
+    required String callId,
+    required AgreementPatch patch,
+  }) async {
+    final failure = error;
+    if (failure != null) throw failure;
+    created.add(patch);
+    final agreement = Agreement(
+      id: 'created-${created.length}',
+      callId: callId,
+      owner: patch.owner ?? AgreementOwner.unknown,
+      type: patch.type ?? 'other',
+      title: patch.title ?? '',
+      object: patch.object,
+      dueDate: patch.dueDate,
+      amount: patch.amount,
+      currency: patch.currency,
+      sourceQuote: '',
+      audioStart: 0,
+      audioEnd: 0,
+      confidence: 0,
+      status: AgreementStatus.detected,
+      version: 1,
+      createdAt: DateTime.utc(2026, 10),
+      updatedAt: DateTime.utc(2026, 10),
+    );
+    stored[agreement.id] = agreement;
+    return agreement;
+  }
+
+  @override
+  Future<Agreement> patch(String agreementId, AgreementPatch changes) async {
+    final failure = error;
+    if (failure != null) throw failure;
+    final current = stored[agreementId] ?? testAgreement(id: agreementId);
+    final updated = current.copyWith(
+      owner: changes.owner ?? current.owner,
+      type: changes.type ?? current.type,
+      title: changes.title ?? current.title,
+      object: changes.object ?? current.object,
+      dueDate: changes.dueDate ?? current.dueDate,
+      amount: changes.amount ?? current.amount,
+      currency: changes.currency ?? current.currency,
+      version: current.version + 1,
+      updatedAt: DateTime.utc(2026, 10),
+    );
+    stored[updated.id] = updated;
+    return updated;
+  }
+
+  @override
+  Future<Agreement> confirm(String agreementId) async {
+    final failure = error;
+    if (failure != null) throw failure;
+    final updated = (stored[agreementId] ?? testAgreement(id: agreementId))
+        .copyWith(status: AgreementStatus.confirmed, version: 100);
+    stored[updated.id] = updated;
+    return updated;
+  }
+
+  @override
+  Future<Agreement> reject(String agreementId) async {
+    final failure = error;
+    if (failure != null) throw failure;
+    final updated = (stored[agreementId] ?? testAgreement(id: agreementId))
+        .copyWith(status: AgreementStatus.rejected, version: 100);
+    stored[updated.id] = updated;
+    return updated;
   }
 }
