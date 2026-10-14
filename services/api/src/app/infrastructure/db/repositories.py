@@ -293,12 +293,19 @@ async def latest_consent(
     subject_type: ConsentSubjectType,
     consent_type: ConsentType,
 ) -> Consent | None:
+    """The latest **user-level** consent (``call_id`` is null).
+
+    A per-call assertion written by the offline declaration (``call_id`` set,
+    §13) must never shadow the user's global setting, so call-scoped rows are
+    excluded here.
+    """
     result = await session.execute(
         select(Consent)
         .where(
             Consent.user_id == user_id,
             Consent.subject_type == subject_type,
             Consent.consent_type == consent_type,
+            Consent.call_id.is_(None),
         )
         .order_by(Consent.created_at.desc())
         .limit(1)
@@ -307,16 +314,21 @@ async def latest_consent(
 
 
 async def latest_call_consent(
-    session: AsyncSession, *, call_id: uuid.UUID, consent_type: ConsentType
+    session: AsyncSession,
+    *,
+    call_id: uuid.UUID,
+    consent_type: ConsentType,
+    subject_type: ConsentSubjectType | None = None,
 ) -> Consent | None:
+    """The latest consent scoped to one call (optionally by subject)."""
+    query = select(Consent).where(
+        Consent.call_id == call_id,
+        Consent.consent_type == consent_type,
+    )
+    if subject_type is not None:
+        query = query.where(Consent.subject_type == subject_type)
     result = await session.execute(
-        select(Consent)
-        .where(
-            Consent.call_id == call_id,
-            Consent.consent_type == consent_type,
-        )
-        .order_by(Consent.created_at.desc())
-        .limit(1)
+        query.order_by(Consent.created_at.desc()).limit(1)
     )
     return result.scalar_one_or_none()
 

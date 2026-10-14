@@ -33,6 +33,48 @@ class ConsentService:
             consent_type=ConsentType.recording,
         )
 
+    async def latest_call_app_consent(self, call_id: uuid.UUID) -> Consent | None:
+        """The app user's consent scoped to a single call (offline, §13)."""
+        return await repositories.latest_call_consent(
+            self._session,
+            call_id=call_id,
+            consent_type=ConsentType.recording,
+            subject_type=ConsentSubjectType.app_user,
+        )
+
+    async def record_call_app_consent(
+        self, user: User, *, call_id: uuid.UUID, granted: bool
+    ) -> Consent:
+        """Assert the app user's consent for one call (``method=app_settings``).
+
+        Used by the offline declaration (§13): the client (owner JWT) declares
+        that the user consented to recording this call, and the event is stored
+        here. ``call_id`` is set, so this row never shadows the user-level
+        setting (see ``latest_consent``).
+        """
+        consent = Consent(
+            user_id=user.id,
+            subject_type=ConsentSubjectType.app_user,
+            call_id=call_id,
+            consent_type=ConsentType.recording,
+            status=ConsentStatus.granted if granted else ConsentStatus.denied,
+            method=ConsentMethod.app_settings,
+            text_version=CONSENT_VERSION,
+            granted_at=datetime.now(UTC) if granted else None,
+        )
+        self._session.add(consent)
+        await self._session.flush()
+        await repositories.record_audit(
+            self._session,
+            entity_type="consent",
+            entity_id=consent.id,
+            action="consent.call_app",
+            actor_user_id=user.id,
+            payload={"call_id": str(call_id), "status": consent.status.value},
+        )
+        await self._session.flush()
+        return consent
+
     async def set_app_consent(self, user: User, *, granted: bool) -> Consent:
         """App-level consent from the settings screen (method ``app_settings``)."""
         consent = Consent(

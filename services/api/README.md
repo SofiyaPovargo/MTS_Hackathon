@@ -128,9 +128,10 @@ Calls (voice provider integration lives behind `VoiceProviderPort`)
 
 | method | path                  | notes                              |
 | ------ | --------------------- | ---------------------------------- |
-| POST   | `/calls`              | create a call (outbound demo)      |
+| POST   | `/calls`              | create a call (outbound demo); with a client `id` + `started_at` it is idempotent (offline, §13) |
 | GET    | `/calls`              | my calls                           |
 | GET    | `/calls/{id}`         | call detail (owner-only)           |
+| POST   | `/calls/{id}/recordings` | declare a call recorded on the client + its consent (offline, §13); fixes `recording_started_at` before the audio upload, owner-only, 403 without consent |
 | POST   | `/calls/{id}/events`  | provider webhook, signed by `VOICE_WEBHOOK_SECRET` |
 | POST   | `/calls/{id}/audio`   | client uploads the recorded audio (`audio/*` body; optional `?leg=operator|client`, `?duration_sec`, `?restart`). **Resumable**: with `Content-Range: bytes <start>-<end>/<total>` the body is one chunk, stored immediately, and the response `offset` says where to resume after a network drop (a retried chunk is idempotent; a gap → 409 with `expected_offset`). 202; queues ASR once complete. 409 if the call was not recorded, 413 oversized, 422 bad type/bad range, 403 foreign call |
 | POST   | `/calls/{id}/analyze` | queue ASR + extraction for a recorded call (202, returns `{call_id,status}`) |
