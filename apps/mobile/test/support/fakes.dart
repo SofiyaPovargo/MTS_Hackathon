@@ -5,6 +5,7 @@ import 'package:agreement_capture/domain/call.dart';
 import 'package:agreement_capture/domain/consent.dart';
 import 'package:agreement_capture/domain/enums.dart';
 import 'package:agreement_capture/domain/models.dart';
+import 'package:agreement_capture/domain/offline_call.dart';
 import 'package:agreement_capture/domain/ports.dart';
 import 'package:agreement_capture/domain/schedule.dart';
 import 'package:agreement_capture/domain/sync_models.dart';
@@ -143,11 +144,36 @@ Call testCall({
   );
 }
 
+PendingCall testPendingCall({
+  String callId = '55555555-5555-5555-5555-555555555555',
+  CallDirection direction = CallDirection.outbound,
+  String calleePhone = '+79000000002',
+  String? contactName = 'Анна',
+  DateTime? startedAt,
+  bool recordConsent = true,
+  ConsentStatus participantConsent = ConsentStatus.granted,
+  ConsentMethod consentMethod = ConsentMethod.audioNotice,
+  DateTime? answeredAt,
+  DateTime? endedAt,
+}) {
+  return PendingCall(
+    callId: callId,
+    direction: direction,
+    calleePhone: calleePhone,
+    contactName: contactName,
+    startedAt: startedAt ?? DateTime.utc(2026, 10, 14, 9),
+    recordConsent: recordConsent,
+    participantConsent: participantConsent,
+    consentMethod: consentMethod,
+    answeredAt: answeredAt,
+    endedAt: endedAt,
+  );
+}
+
 ConsentRecord testConsentRecord({
   String id = '66666666-6666-6666-6666-666666666666',
   ConsentStatus status = ConsentStatus.granted,
-}) {
-  return ConsentRecord(
+}) {  return ConsentRecord(
     id: id,
     subjectType: 'app_user',
     status: status,
@@ -558,11 +584,22 @@ class FakeVoiceCallProvider
 }
 
 class FakeCallApi implements CallApi {
-  FakeCallApi({this.error, List<Call>? history})
+  FakeCallApi({this.error, this.declareError, List<Call>? history})
       : history = history ?? <Call>[];
 
   ApiException? error;
+
+  /// When set, only [declareRecording] fails (create succeeds): the client must
+  /// keep the entry queued and retry the declaration (idempotent create).
+  ApiException? declareError;
+
   final List<Call> created = <Call>[];
+
+  /// Ids the client supplied when creating calls (offline / idempotent path).
+  final List<String> createdWithId = <String>[];
+
+  /// Recordings declared through [declareRecording] (offline path, §13).
+  final List<DeclaredRecording> declared = <DeclaredRecording>[];
 
   /// Calls returned by [calls] / [getCall] (the user's history).
   List<Call> history;
@@ -574,10 +611,15 @@ class FakeCallApi implements CallApi {
     required CallDirection direction,
     required String calleePhone,
     String? contactName,
+    String? id,
+    DateTime? startedAt,
+    bool recordConsent = true,
   }) async {
     final failure = error;
     if (failure != null) throw failure;
+    if (id != null) createdWithId.add(id);
     final call = testCall(
+      id: id ?? '55555555-5555-5555-5555-555555555555',
       direction: direction,
       contactPhone: calleePhone,
       contactName: contactName,
@@ -603,6 +645,62 @@ class FakeCallApi implements CallApi {
     final failure = error;
     if (failure != null) throw failure;
     return List<Call>.unmodifiable(history);
+  }
+
+  @override
+  Future<Call> declareRecording(
+    String callId, {
+    bool recordConsent = true,
+    ConsentStatus participantConsent = ConsentStatus.granted,
+    ConsentMethod consentMethod = ConsentMethod.audioNotice,
+    DateTime? answeredAt,
+    DateTime? recordingStartedAt,
+    DateTime? endedAt,
+  }) async {
+    final failure = error ?? declareError;
+    if (failure != null) throw failure;
+    declared.add((
+      callId: callId,
+      recordConsent: recordConsent,
+      participantConsent: participantConsent,
+      consentMethod: consentMethod,
+      endedAt: endedAt,
+    ));
+    return history.firstWhere(
+      (call) => call.id == callId,
+      orElse: () => testCall(id: callId, status: 'completed'),
+    );
+  }
+}
+
+/// One [FakeCallApi.declareRecording] call, for assertions.
+typedef DeclaredRecording = ({
+  String callId,
+  bool recordConsent,
+  ConsentStatus participantConsent,
+  ConsentMethod consentMethod,
+  DateTime? endedAt,
+});
+
+/// In-memory [PendingCallStore] keyed by `call_id`.
+class InMemoryPendingCallStore implements PendingCallStore {
+  final Map<String, PendingCall> calls = <String, PendingCall>{};
+
+  @override
+  Future<void> save(PendingCall call) async {
+    calls[call.callId] = call;
+  }
+
+  @override
+  Future<List<PendingCall>> pending() async {
+    final all = calls.values.toList()
+      ..sort((a, b) => a.startedAt.compareTo(b.startedAt));
+    return all;
+  }
+
+  @override
+  Future<void> remove(String callId) async {
+    calls.remove(callId);
   }
 }
 
@@ -868,6 +966,9 @@ class FakeAudioIngestApi implements AudioIngestApi {
       <({String callId, int? start, int? total, int length})>[];
   int failRemaining = 0;
 
+  /// When true every upload fails as if there were no network.
+  bool down = false;
+
   /// Offsets the server reports; defaults to start + length.
   int? forcedOffset;
 
@@ -880,8 +981,8 @@ class FakeAudioIngestApi implements AudioIngestApi {
     String? contentType,
     int? durationSec,
   }) async {
-    if (failRemaining > 0) {
-      failRemaining--;
+    if (down || failRemaining > 0) {
+      if (failRemaining > 0) failRemaining--;
       throw const ApiException(ApiErrorKind.network, 'offline');
     }
     calls.add((callId: callId, start: start, total: total, length: bytes.length));

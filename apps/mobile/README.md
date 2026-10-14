@@ -161,9 +161,23 @@ missed), `dial`, `answer`, `decline`, `hangup`, `setMuted`. Платформен
 - **Координатор** (`application/recording_service.dart`) стартует запись, когда
   звонок переходит в `recording` (после согласия), и завершает/грузит её на
   терминальном состоянии; ошибки аудио никогда не ломают звонок.
-- **Ограничение**: полностью офлайн-звонок (сервер не видел `answered`) требует
-  доработок backend (идемпотентное создание звонка и клиентская фиксация
-  `recording_started_at`+согласия) — см. `plan.md` §13 и `TEAM_PLAN.md`.
+- **Полностью офлайн-звонок** (сервер не видел `answered`, `plan.md` §13):
+  - при постановке исходящего звонка клиент генерирует UUID
+    (`callIdFactoryProvider`, `uuid`) и отправляет его в `POST /calls`
+    (`id`, `started_at`, `record_consent`) — повтор запроса после обрыва не
+    создаёт дубликат (идемпотентность по клиентскому id);
+  - при недоступном backend (`network`/`server`) звонок продолжается локально
+    (`CallState.offline == true`), согласие берётся только из реального флоу —
+    клиент **никогда** не выдаёт согласие сам;
+  - на завершении регистрация складывается в `pending_calls`
+    (`domain/offline_call.dart`, `infrastructure/db/pending_call_store.dart`,
+    схема v4) и `OfflineCallService.flush()` повторяет
+    `POST /calls` → `POST /calls/{id}/recordings`; аудио догружается
+    `uploadPending()` только после успешной регистрации;
+  - повтор — на старте приложения/при появлении сессии
+    (`recordingRetryProvider`: сначала `flush()`, затем `uploadPending()`).
+    Запись без согласия остаётся невозможной: сервер фиксирует
+    `recording_started_at` только при обоих событиях согласия.
 
 ## Договорённости и live-карточка (Этап 7)
 
@@ -282,8 +296,9 @@ missed), `dial`, `answer`, `decline`, `hangup`, `setMuted`. Платформен
 - **Формат даты/времени**: `formatDateTime` в `ui/formats.dart` (локаль устройства).
 - **Ещё не сделано** (не трек A): удаление события календаря (ждёт
   `DELETE /tasks/{id}/calendar` + `CalendarPort.delete_event()` — трек C, Mav);
-  мобильный путь полностью офлайн-звонка (backend готов, PR #17: `POST /calls`
-  с клиентским `id` и `POST /calls/{id}/recordings` — интеграция отложена).
+  `call_id` в `TaskOut`/sync для «К звонку-источнику» на личной доске (трек C,
+  Mav); мобильный путь полностью офлайн-звонка реализован
+  (`OfflineCallService`, `pending_calls`), но не проверен на живом Voice SDK/стенде.
 
 ## Вход
 
@@ -297,7 +312,8 @@ refresh) сохраняется в SQLite и восстанавливается 
 
 Сервер — единственный источник истины; SQLite хранит только данные пользователя:
 `tasks`, `agreements`, `session`, `outbox`, `sync_state`, `app_settings` (кэш
-согласия). Цикл (`plan.md` §9):
+согласия), `audio_recordings` (ограниченный кэш своих записей) и `pending_calls`
+(офлайн-регистрации звонков, §13). Цикл (`plan.md` §9):
 
 ```
 pull (GET /sync?since=) → apply в локальную БД → push outbox (POST /sync)

@@ -13,7 +13,7 @@ class AppDatabase {
         _fileName = fileName,
         _path = path;
 
-  static const int schemaVersion = 3;
+  static const int schemaVersion = 4;
 
   static const String _appSettingsTableSql = '''
       CREATE TABLE app_settings(
@@ -33,6 +33,24 @@ class AppDatabase {
         created_at TEXT NOT NULL,
         uploaded_at TEXT,
         keep_until TEXT
+      )
+    ''';
+
+  /// Calls registered while the app could not reach the backend (plan.md §13):
+  /// pushed to the server (idempotently) once the network is back.
+  static const String _pendingCallsTableSql = '''
+      CREATE TABLE pending_calls(
+        call_id TEXT PRIMARY KEY,
+        direction TEXT NOT NULL,
+        callee_phone TEXT NOT NULL,
+        contact_name TEXT,
+        started_at TEXT NOT NULL,
+        record_consent INTEGER NOT NULL DEFAULT 1,
+        participant_consent TEXT NOT NULL DEFAULT 'granted',
+        consent_method TEXT NOT NULL DEFAULT 'audio_notice',
+        answered_at TEXT,
+        recording_started_at TEXT,
+        ended_at TEXT
       )
     ''';
 
@@ -73,6 +91,9 @@ class AppDatabase {
     }
     if (oldVersion < 3) {
       await db.execute(_audioRecordingsTableSql);
+    }
+    if (oldVersion < 4) {
+      await db.execute(_pendingCallsTableSql);
     }
   }
 
@@ -143,6 +164,7 @@ class AppDatabase {
     ''');
     batch.execute(_appSettingsTableSql);
     batch.execute(_audioRecordingsTableSql);
+    batch.execute(_pendingCallsTableSql);
     await batch.commit(noResult: true);
   }
 }

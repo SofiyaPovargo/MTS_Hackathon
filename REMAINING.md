@@ -1,12 +1,13 @@
 # Что осталось сделать — по людям
 
 Статус на **2026-10-14**. Источники: `PROGRESS.md`, `TEAM_PLAN.md`, `plan.md`.
-Гейты: mobile — `cd apps/mobile && flutter analyze && flutter test` (сейчас **167**);
+Гейты: mobile — `cd apps/mobile && flutter analyze && flutter test` (сейчас **178**);
 backend — `cd services/api && uv run ruff check . && uv run mypy . && uv run pytest`.
 
-Актуально: **PR #16** (Этап 6 + Этап 9 mobile) и **PR #17** (офлайн-звонок, трек C)
-влиты в `development`; **PR #18** — остаток Этапа 9 (история звонков, `.ics`,
-напоминания). Трек B (ML) закрыт.
+Актуально: **PR #16** (Этап 6 + Этап 9 mobile), **PR #17** (офлайн-звонок, трек C) и
+**PR #18** (остаток Этапа 9: история звонков, `.ics`, напоминания) влиты в
+`development`. Мобильный путь офлайн-звонка реализован (`track/mobile-offline-call`).
+Трек B (ML) закрыт.
 
 ---
 
@@ -14,12 +15,16 @@ backend — `cd services/api && uv run ruff check . && uv run mypy . && uv run p
 
 Этапы 3–9 (UI) закрыты, критический путь демо работает на Dart-уровне. Осталось:
 
-- [ ] **Полностью офлайн-звонок (клиент)** — backend **готов** (PR #17):
-      `POST /calls` принимает клиентский `id`/`started_at`/`record_consent`
-      идемпотентно, `POST /calls/{id}/recordings` фиксирует запись и согласие.
-      Нужно: локальный UUID на звонок, очередь регистрации (буфер pending-звонков),
-      flush при появлении сети, затем догрузка аудио. **Согласие участника — только
-      из реального флоу** (`markConsentResult`), без авто-гранта (правило продукта).
+- [x] **Полностью офлайн-звонок (клиент)** — сделано (`track/mobile-offline-call`):
+      клиентский UUID на звонок (`callIdFactoryProvider`), fallback на локальный
+      звонок при `network`/`server`-ошибке `POST /calls` (`CallState.offline`),
+      очередь `pending_calls` (схема v4) + `OfflineCallService.flush()`
+      (`POST /calls` идемпотентно → `POST /calls/{id}/recordings`) и догрузка
+      аудио `uploadPending()`; повтор на старте (`recordingRetryProvider`).
+      **Согласие участника — только из реального флоу** (`markConsentResult`),
+      без авто-гранта. Покрыто `offline_call_service_test`, `offline_call_test`,
+      тестами `CallController` и `SqlitePendingCallStore` (178 тестов). На живом
+      Voice SDK/стенде не проверялось (см. блокеры).
 - [ ] **Нативный VoIP** *(блокер: нет Android SDK/Java/Xcode в среде)*:
       CallKit/PushKit (iOS), Telecom/ConnectionService (Android), реальные входящие,
       реальная запись медиапотока за `VoiceCallProvider.openMediaStream()` и

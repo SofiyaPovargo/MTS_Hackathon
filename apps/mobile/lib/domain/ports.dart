@@ -8,6 +8,7 @@ import 'call.dart';
 import 'consent.dart';
 import 'enums.dart';
 import 'models.dart';
+import 'offline_call.dart';
 import 'schedule.dart';
 import 'sync_models.dart';
 import 'ws_event.dart';
@@ -151,16 +152,37 @@ abstract class IncomingCallSimulator {
 
 /// Call records on the backend (`POST /calls`, `GET /calls`, `GET /calls/{id}`).
 abstract class CallApi {
+  /// Creates a call. A client [id] makes it idempotent (offline, plan.md §13):
+  /// replaying the request after a network drop returns the same call instead of
+  /// creating a duplicate. [startedAt] records the real conversation start and
+  /// [recordConsent] the app user's decision (the offline client asserts both).
   Future<Call> createCall({
     required CallDirection direction,
     required String calleePhone,
     String? contactName,
+    String? id,
+    DateTime? startedAt,
+    bool recordConsent = true,
   });
 
   Future<Call> getCall(String id);
 
   /// The user's own call history (`GET /calls`), newest first.
   Future<List<Call>> calls();
+
+  /// Declares a call recorded on the client and its consent
+  /// (`POST /calls/{id}/recordings`, plan.md §13, offline). The server records
+  /// both consent events and only then fixes `recording_started_at`, so the
+  /// audio upload stays impossible without consent. Idempotent.
+  Future<Call> declareRecording(
+    String callId, {
+    bool recordConsent = true,
+    ConsentStatus participantConsent = ConsentStatus.granted,
+    ConsentMethod consentMethod = ConsentMethod.audioNotice,
+    DateTime? answeredAt,
+    DateTime? recordingStartedAt,
+    DateTime? endedAt,
+  });
 }
 
 /// The app user's consent to recording / AI processing
@@ -248,6 +270,20 @@ abstract class AudioRecordingStore {
   /// Drops uploaded recordings past their retention / above [maxRecordings]
   /// (keeps the local cache bounded).
   Future<void> enforceRetention({int maxRecordings});
+}
+
+/// Queue of calls the client registered itself while offline (plan.md §13).
+///
+/// An entry is removed only after the server accepts both the call and its
+/// recording declaration. The queue lives in the local DB (a cache + offline
+/// change queue), never in a second system of record.
+abstract class PendingCallStore {
+  /// Inserts or replaces the registration for [call] (keyed by `call_id`).
+  Future<void> save(PendingCall call);
+
+  Future<List<PendingCall>> pending();
+
+  Future<void> remove(String callId);
 }
 
 /// Resumable ingest of a recording (`POST /calls/{id}/audio`).
